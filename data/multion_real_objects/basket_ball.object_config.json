@@ -1,0 +1,5 @@
+{
+  "render_asset": "./basketball.glb",
+  "scale": [0.75, 0.75, 0.75],
+  "COM" : [0.0,0.0,0.0]
+}
