@@ -16,8 +16,7 @@ from typing import Dict, Optional
 from habitat.config.default import get_config
 from habitat.core.agent import Agent
 from habitat.core.env import Env
-from PIL import Image
-import imageio
+
 
 class Benchmark:
     r"""Benchmark for evaluating agents in environments."""
@@ -136,20 +135,10 @@ class Benchmark:
             observations = self._env.reset()
             agent.reset()
 
-            rgb_frames = []
             while not self._env.episode_over:
                 action = agent.act(observations)
                 observations = self._env.step(action)
-                rgb_frames.append(observations["rgb"][:, :, :3])
 
-            writer = imageio.get_writer(os.path.join("videos", "real_objs", f"trolley_bag_ep{count_episodes}.mp4"),
-                fps=10,
-                quality=5
-            )
-            for im in rgb_frames:
-                writer.append_data(im)
-            writer.close()
-            
             metrics = self._env.get_metrics()
             for m, v in metrics.items():
                 if isinstance(v, dict):

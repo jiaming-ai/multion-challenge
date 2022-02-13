@@ -1,19 +1,28 @@
 # MultiON Challenge 2022
 
-This repository contains submission guidelines and starter code for the MultiON Challenge 2022. For challenge overview, check [challenge webpage](https://multion-challenge.github.io/). To participate, visit EvalAI challenge page.
+This repository contains submission guidelines and starter code for the MultiON Challenge 2022. For challenge overview, check [challenge webpage](http://multion-challenge.cs.sfu.ca). To participate, visit EvalAI challenge [page](https://eval.ai/web/challenges/challenge-page/1595/overview).
 
 To receive challenge updates, please join our Google Group email list: [click here](https://groups.google.com/g/multion-challenge-2022/) to join or send an email to [multion-challenge-2022+subscribe@googlegroups.com](mailto:multion-challenge-2022+subscribe@googlegroups.com).
 
 ## Task
 
-In MultiON, an agent is tasked with navigating to a sequence of objects inserted into a realistic 3D environment. The challenge uses [AI Habitat](https://aihabitat.org/) for simulation and uses scenes from Matterport3D dataset. The target objects are randomly sampled from a set of 8 cylinders with identical shapes but different colors. 
+In MultiON, an agent is tasked with navigating to a sequence of objects. These objects are flexibly inserted into a realistic 3D environment. The task is based on the [AI Habitat](https://aihabitat.org/) and [Habitat-Matterport 3D (HM3D)](https://aihabitat.org/datasets/hm3d) scenes. 
 
-In each episode, the agent is initialized at a random starting position and orientation in an unseen environment and provided a 
-list of target objects randomly sampled (without replacement) from the set of 8 objects. The agent must navigate to each object in the list, in order, and call a FOUND action to indicate its discovery. The agent has access to an RGB-D camera and a (noiseless) GPS+Compass sensor. GPS+Compass sensor provides the agent's current location and orientation information relative to the start of the episode. The episode terminates when an agent finds all the objects in the current episode or when it calls an incorrect FOUND action or if the agent exhausts its given time budget.
+This year the challenge has two separate tracks. 
+- CYLINDER Track: Each episode contains 5 target objects randomly sampled from a set of 8 cylinders with identical shapes but different colors.
+
+- REAL-OBJECTS Track: Each episode contains 5 target objects randomly sampled from a set of 8 realistic looking 3D objects.
+
+Additionally, there are some other changes from last year.
+
+- Both the tracks contain five target objects (5ON) in contrast to three (3ON) from last year's challenge.
+- The episodes contain some distractor (non-target) objects randomly scattered around the environment, to increase the difficulty of the task.
+
+In summary, in each episode, the agent is initialized at a random starting position and orientation in an unseen environment and provided a sequence of 5 target objects randomly sampled (without replacement) from the set of 8 objects. The agent must navigate to each target object in the sequence (in the given order), avoiding distractor objects and enact the FOUND action to indicate discovery. The agent has access to an RGB-D camera and a noiseless GPS+Compass sensor. GPS+Compass sensor provides the agent's current location and orientation information relative to the start of the episode.
 
 
 ## Dataset
-We use [Matterport3D scenes](https://niessner.github.io/Matterport/) for the challenge. We follow the standard train/val/test split as recommended by [Anderson *et al.*](https://arxiv.org/abs/1807.06757) Each episode contains three sequential targets. For the challenge, we focus on the task of 3-ON or 3 object navigation.
+We use [Habitat-Matterport 3D (HM3D)](https://aihabitat.org/datasets/hm3d) for the challenge. Each episode contains five sequential targets and some distractor objects. For this year's challenge, we focus on the task of 5-ON or 5 object navigation with cylinder and realistic objects.
 
 ## Evaluation
 We extend the evaluation protocol of [ObjectNav](https://arxiv.org/abs/2006.13171). We use two metrics to evaluate agent performance:  
@@ -24,7 +33,7 @@ We extend the evaluation protocol of [ObjectNav](https://arxiv.org/abs/2006.1317
 
 ## Submission Guidelines 
 
-To participate in the challenge, visit our [EvalAI](https://staging.eval.ai/web/challenges/challenge-page/474/overview) page. Participants need to upload docker containers with their agents using EvalAI. Before making your submission, you should run your container locally on the mini-val data split to ensure the performance metrics match with those of remote evaluation. We provide a base docker image and participants only need to edit `evaluate.py` file which implements the navigation agent. Instructions for building your docker container are provided below.
+To participate in the challenge, visit our [EvalAI](https://eval.ai/web/challenges/challenge-page/1595/overview) page. Participants need to upload docker containers with their agents using EvalAI. Before making your submission, you should run your container locally on the minival data split to ensure the performance metrics match with those of remote evaluation. We provide a base docker image and participants only need to edit `evaluate.py` file which implements the navigation agent. Instructions for building your docker container are provided below.
 
 
 1. Install [nvidia-docker v2](https://github.com/NVIDIA/nvidia-docker) by following instructions given [here](https://github.com/nvidia/nvidia-docker/wiki/Installation-(version-2.0)).
@@ -43,12 +52,13 @@ cd multion-challenge
 docker build -t multi_on .
 ```
 
-6. Download Matterport3D scenes for Habitat [here](https://niessner.github.io/Matterport/) and place the data in: `multion-challenge/data/scene_datasets/mp3d`. Minival dataset is already contained in `multion-challenge/data/3_ON_minival`. 
+6. Download HM3D scenes [here](https://aihabitat.org/datasets/hm3d) and place the data in: `multion-challenge/data/scene_datasets/hm3d`. 
+Minival dataset is already contained in `multion-challenge/data/3_ON_minival`. 
 
 
 7. Test the docker container locally.
 ```
-docker run -v multion-challenge/data:/multion-chal-starter/data --runtime=nvidia multi_on:latest
+./test_locally.sh --docker-name multi_on:latest
 ```
 You should see an output like this:
 
@@ -88,5 +98,5 @@ If you use the multiON framework, please consider citing the following [paper](h
 ```
 
 ## Acknowledgements
-We thank the [habitat](https://aihabitat.org/) team for building the habitat framework. We also thank [EvalAI](https://eval.ai/) team who helped us host the challenge. This work would not be possible without the [Matterport3D dataset](https://niessner.github.io/Matterport/).
+We thank the [habitat](https://aihabitat.org/) team for building the habitat framework and providing the HM3D scenes. We also thank [EvalAI](https://eval.ai/) team who helped us host the challenge.
 
