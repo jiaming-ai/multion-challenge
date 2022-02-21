@@ -45,27 +45,96 @@ cd multion-challenge
 ```
 3. Edit `evaluate.py` to implement your agent. Currently, it uses an agent taking random actions.
 
-4. Make changes in the the provided Dockerfile if your agent has additional dependencies. They should be installed inside a conda environment named `habitat` that already exists in our docker. 
+4. Make changes in the the provided Dockerfile corresponding to each track if your agent has additional dependencies. They should be installed inside a conda environment named `habitat` that already exists in our docker. For the CYLINDER Track, use Dockerfile_cylinder_objects_track, and for REAL-OBJECTS Track, use Dockerfile_real_objects_track.
 
 5. Build the docker container (this may need `sudo` priviliges):
+For the CYLINDER Track:
 ```
-docker build -t multi_on .
+docker build -f Dockerfile_cylinder_objects_track -t multi_on:cyl_latest .
 ```
+For the REAL-OBJECTS Track:
+```
+docker build -f Dockerfile_real_objects_track -t multi_on:real_latest .
+```
+Note that we use `configs/multinav_cyl.yaml` for the CYLINDER Track and `configs/multinav_real.yaml` for the REAL-OBJECTS Track. The two configs use `OBJECTS_TYPE` to specify the type of objects to be used and the corresponding objects path specified by `CYL_OBJECTS_PATH` and `REAL_OBJECTS_PATH` respectively.
 
 6. Download HM3D scenes [here](https://aihabitat.org/datasets/hm3d) and place the data in: `multion-challenge/data/scene_datasets/hm3d`. 
-Minival dataset is already contained in `multion-challenge/data/3_ON_minival`. 
 
+Download the objects for the two tracks:
+```
+wget -O multion_cyl_objects.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/multion_cyl_objects"
+wget -O multion_real_objects.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/multion_real_objects"
+```
+Extract them under `multion-challenge/data`.
+
+Download the dataset for different splits of the two tracks.
+For the CYLINDER Track:
+```
+wget -O 5_ON_CYL_minival.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_CYL_minival"
+wget -O 5_ON_CYL_val.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_CYL_val"
+wget -O 5_ON_CYL_train.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_CYL_train"
+```
+For the REAL-OBJECTS Track:
+```
+wget -O 5_ON_REAL_minival.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_REAL_minival"
+wget -O 5_ON_REAL_val.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_REAL_val"
+wget -O 5_ON_REAL_train.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_REAL_train"
+```
+Extract them and place them inside `multion-challenge/data` in the following format:
+
+```
+multion-challenge/
+  data/
+    scene_datasets/
+      hm3d/
+          ...
+    multion_cyl_objects/
+        ...
+    multion_real_objects/
+        ...
+    5_ON_CYL/
+        train/
+            content/
+                ...
+            train.json.gz
+        minival/
+            content/
+                ...
+            minival.json.gz
+        val/
+            content/
+                ...
+            val.json.gz
+    5_ON_REAL/
+        train/
+            content/
+                ...
+            train.json.gz
+        minival/
+            content/
+                ...
+            minival.json.gz
+        val/
+            content/
+                ...
+            val.json.gz
+```
 
 7. Test the docker container locally.
+For the CYLINDER Track:
 ```
-./test_locally.sh --docker-name multi_on:latest
+./test_locally_cylinder_objects_track.sh --docker-name multi_on:cyl_latest
+```
+For the REAL-OBJECTS Track:
+```
+./test_locally_real_objects_track.sh --docker-name multi_on:real_latest
 ```
 You should see an output like this:
 
 ```
-2022-02-05 11:28:19,591 Initializing dataset MultiNav-v1
+2022-02-05 11:28:19,591 Initializing dataset MultiObjectNav-v1
 2022-02-05 11:28:19,592 initializing sim Sim-v0
-2022-02-05 11:28:25,368 Initializing task MultiNav-v1
+2022-02-05 11:28:25,368 Initializing task MultiObjectNav-v1
 Progress: 0.0
 PPL: 0.0
 Success: 0.0
