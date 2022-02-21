@@ -53,6 +53,7 @@ cd multion-challenge
 ```
 docker build -f Dockerfile_cylinder_objects_track -t multi_on:cyl_latest .
 ```
+    
     For the REAL-OBJECTS Track:
 ```
 docker build -f Dockerfile_real_objects_track -t multi_on:real_latest .
@@ -127,6 +128,7 @@ multion-challenge/
 ```
 ./test_locally_cylinder_objects_track.sh --docker-name multi_on:cyl_latest
 ```
+    
     For the REAL-OBJECTS Track:
 ```
 ./test_locally_real_objects_track.sh --docker-name multi_on:real_latest
