@@ -49,45 +49,45 @@ cd multion-challenge
 
 5. Build the docker container (this may need `sudo` priviliges).
 
-   For the CYLINDER Track:
 ```
+# For the CYLINDER Track
 docker build -f Dockerfile_cylinder_objects_track -t multi_on:cyl_latest .
 ```
 
-   For the REAL-OBJECTS Track:
 ```
+# For the REAL-OBJECTS Track
 docker build -f Dockerfile_real_objects_track -t multi_on:real_latest .
 ```
 
-   Note that we use `configs/multinav_cyl.yaml` for the CYLINDER Track and `configs/multinav_real.yaml` for the REAL-OBJECTS Track. The two configs use `OBJECTS_TYPE` to specify the type of objects to be used and the corresponding objects path specified by `CYL_OBJECTS_PATH` and `REAL_OBJECTS_PATH` respectively.
+Note that we use `configs/multinav_cyl.yaml` for the CYLINDER Track and `configs/multinav_real.yaml` for the REAL-OBJECTS Track. The two configs use `OBJECTS_TYPE` to specify the type of objects to be used and the corresponding objects path specified by `CYL_OBJECTS_PATH` and `REAL_OBJECTS_PATH` respectively.
 
 6. Download HM3D scenes [here](https://aihabitat.org/datasets/hm3d) and place the data in: `multion-challenge/data/scene_datasets/hm3d`. 
 
-   Download the objects for the two tracks:
+Download the objects for the two tracks:
 ```
 wget -O multion_cyl_objects.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/multion_cyl_objects"
 wget -O multion_real_objects.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/multion_real_objects"
 ```
 
-   Extract them under `multion-challenge/data`.
+Extract them under `multion-challenge/data`.
 
-   Download the dataset for different splits of the two tracks.
-   
-   For the CYLINDER Track:
+Download the dataset for different splits of the two tracks.
+
 ```
+# For the CYLINDER Track
 wget -O 5_ON_CYL_minival.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_CYL_minival"
 wget -O 5_ON_CYL_val.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_CYL_val"
 wget -O 5_ON_CYL_train.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_CYL_train"
 ```
 
-   For the REAL-OBJECTS Track:
 ```
+# For the REAL-OBJECTS Track
 wget -O 5_ON_REAL_minival.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_REAL_minival"
 wget -O 5_ON_REAL_val.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_REAL_val"
 wget -O 5_ON_REAL_train.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_REAL_train"
 ```
 
-   Extract them and place them inside `multion-challenge/data` in the following format:
+Extract them and place them inside `multion-challenge/data` in the following format:
 
 ```
 multion-challenge/
@@ -129,17 +129,17 @@ multion-challenge/
 
 7. Test the docker container locally.
 
-   For the CYLINDER Track:
 ```
+# For the CYLINDER Track
 ./test_locally_cylinder_objects_track.sh --docker-name multi_on:cyl_latest
 ```
 
-   For the REAL-OBJECTS Track:
 ```
+# For the REAL-OBJECTS Track
 ./test_locally_real_objects_track.sh --docker-name multi_on:real_latest
 ```
 
-   You should see an output like this:
+You should see an output like this:
 
 ```
 2022-02-05 11:28:19,591 Initializing dataset MultiObjectNav-v1
