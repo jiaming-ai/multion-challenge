@@ -1,11 +1,7 @@
 import sys
 sys.path.insert(0, "")
-import argparse
-import os
-import random
 import numpy as np
 import habitat
-from habitat.core.challenge import Challenge
 
 class RandomWalker(habitat.Agent):
     def __init__(self, task_config: habitat.Config):
@@ -19,15 +15,10 @@ class RandomWalker(habitat.Agent):
 
 def main():
     
-    evaluation = os.environ["AGENT_EVALUATION_TYPE"]
-    config_paths = os.environ["CHALLENGE_CONFIG_FILE"]
-    config = habitat.get_config(config_paths)
+    config = habitat.get_config("./configs/multinav_real.yaml")
     agent = RandomWalker(task_config=config)
     
-    if evaluation == "local":
-        challenge = habitat.Challenge(eval_remote=False)
-    else:
-        challenge = habitat.Challenge(eval_remote=True)
+    challenge = habitat.Challenge()
 
     challenge.submit(agent)
     

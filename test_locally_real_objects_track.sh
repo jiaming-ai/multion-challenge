@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-DOCKER_NAME="multi_on:latest"
+DOCKER_NAME="multi_on:real_latest"
 
 while [[ $# -gt 0 ]]
 do
@@ -19,9 +19,10 @@ case $key in
 esac
 done
 
-sudo docker run \
+docker run \
     -v $(pwd)/data:/multion-chal-starter/data \
     --runtime=nvidia \
     -e "AGENT_EVALUATION_TYPE=local" \
+    -e "TRACK_CONFIG_FILE=/multion-chal-starter/configs/multinav_real.yaml" 
     ${DOCKER_NAME}\
 
