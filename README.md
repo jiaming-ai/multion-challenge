@@ -47,7 +47,8 @@ cd multion-challenge
 
 4. Make changes in the the provided Dockerfile corresponding to each track if your agent has additional dependencies. They should be installed inside a conda environment named `habitat` that already exists in our docker. For the CYLINDER Track, use Dockerfile_cylinder_objects_track, and for REAL-OBJECTS Track, use Dockerfile_real_objects_track.
 
-5. Build the docker container (this may need `sudo` priviliges):
+5. Build the docker container (this may need `sudo` priviliges).
+
 For the CYLINDER Track:
 ```
 docker build -f Dockerfile_cylinder_objects_track -t multi_on:cyl_latest .
