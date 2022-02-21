@@ -49,11 +49,11 @@ cd multion-challenge
 
 5. Build the docker container (this may need `sudo` priviliges).
 
-&nbsp;&nbsp;For the CYLINDER Track:
+   For the CYLINDER Track:
 ```
 docker build -f Dockerfile_cylinder_objects_track -t multi_on:cyl_latest .
 ```
-&nbsp;&nbsp;For the REAL-OBJECTS Track:
+   For the REAL-OBJECTS Track:
 ```
 docker build -f Dockerfile_real_objects_track -t multi_on:real_latest .
 ```
