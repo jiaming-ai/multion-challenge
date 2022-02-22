@@ -1,6 +1,6 @@
 # MultiON Challenge 2022
 
-This repository contains submission guidelines and starter code for the MultiON Challenge 2022. For challenge overview, check [challenge webpage](http://multion-challenge.cs.sfu.ca). To participate, visit EvalAI challenge [page](https://eval.ai/web/challenges/challenge-page/1595/overview).
+This repository contains submission guidelines and starter code for the MultiON Challenge 2022. For challenge overview, check [challenge webpage](http://multion-challenge.cs.sfu.ca). To participate, visit EvalAI challenge [page](https://eval.ai/web/challenges/challenge-page/1617/overview).
 
 To receive challenge updates, please join our Google Group email list: [click here](https://groups.google.com/g/multion-challenge-2022/) to join or send an email to [multion-challenge-2022+subscribe@googlegroups.com](mailto:multion-challenge-2022+subscribe@googlegroups.com).
 
@@ -33,7 +33,7 @@ We extend the evaluation protocol of [ObjectNav](https://arxiv.org/abs/2006.1317
 
 ## Submission Guidelines 
 
-To participate in the challenge, visit our [EvalAI](https://eval.ai/web/challenges/challenge-page/1595/overview) page. Participants need to upload docker containers with their agents using EvalAI. Before making your submission, you should run your container locally on the minival data split to ensure the performance metrics match with those of remote evaluation. We provide a base docker image and participants only need to edit `evaluate.py` file which implements the navigation agent. Instructions for building your docker container are provided below.
+To participate in the challenge, visit our [EvalAI](https://eval.ai/web/challenges/challenge-page/1617/overview) page. Participants need to upload docker containers with their agents using EvalAI. Before making your submission, you should run your container locally on the minival data split to ensure the performance metrics match with those of remote evaluation. We provide a base docker image and participants only need to edit `evaluate.py` file which implements the navigation agent. Instructions for building your docker container are provided below.
 
 
 1. Install [nvidia-docker v2](https://github.com/NVIDIA/nvidia-docker) by following instructions given [here](https://github.com/nvidia/nvidia-docker/wiki/Installation-(version-2.0)).
