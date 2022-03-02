@@ -319,7 +319,7 @@ class Env:
 
             patch = patch[currPix[0]-40:currPix[0]+40, currPix[1]-40:currPix[1]+40,:]
             patch = ndimage.interpolation.rotate(patch, -(observations["heading"][0] * 180/np.pi) + 90, order=0, reshape=False)
-            observations["semMap"] = patch[40-25:40+25, 40-25:40+25, :]
+            #observations["semMap"] = patch[40-25:40+25, 40-25:40+25, :]
         return observations
 
     def _update_step_stats(self) -> None:
@@ -353,10 +353,12 @@ class Env:
             self._episode_over is False
         ), "Episode over, call reset before calling step"
 
+        self.task.is_found_called = bool(action == 0)
+        
         # Support simpler interface as well
         if isinstance(action, (str, int, np.integer)):
             action = {"action": action}
-
+            
         observations = self.task.step(
             action=action, episode=self.current_episode
         )
@@ -379,7 +381,7 @@ class Env:
                 patch = self.currMap
             patch = patch[currPix[0]-40:currPix[0]+40, currPix[1]-40:currPix[1]+40,:]
             patch = ndimage.interpolation.rotate(patch, -(observations["heading"][0] * 180/np.pi) + 90, order=0, reshape=False)
-            observations["semMap"] = patch[40-25:40+25, 40-25:40+25, :]
+            #observations["semMap"] = patch[40-25:40+25, 40-25:40+25, :]
 
         ##Terminates episode if wrong found is called
         if self.task.is_found_called == True and \
@@ -387,6 +389,12 @@ class Env:
             "current_goal_success"
         ].get_metric() == 0:
             self.task._is_episode_active = False
+        
+        ##Terminates episode if all goals are found
+        if self.task.is_found_called == True and \
+            self.task.current_goal_index == len(self.current_episode.goals):
+            self.task._is_episode_active = False
+            
         self._update_step_stats()
 
         return observations
