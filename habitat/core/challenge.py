@@ -20,8 +20,8 @@ class Challenge(Benchmark):
         for k, v in metrics.items():
             logger.info("{}: {}".format(k, v))
         
-        print("Progress:", metrics["progress"])
-        print("PPL:", metrics["multiON_ppl"])
-        print("Success:", metrics["multiON_success"])
-        print("SPL:", metrics["multiON_spl"])
+        print("Progress:", metrics["percentage_success"])
+        print("PPL:", metrics["pspl"])
+        print("Success:", metrics["success"])
+        print("SPL:", metrics["mspl"])
 
