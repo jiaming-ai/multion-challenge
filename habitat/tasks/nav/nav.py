@@ -657,14 +657,14 @@ class PercentageSuccess(Measure):
     def update_metric(
         self, *args: Any, episode, task: EmbodiedTask, **kwargs: Any
     ):
-        distance_to_subgoal = task.measurements.measures[
-            DistanceToCurrGoal.cls_uuid
-        ].get_metric()
+        #distance_to_subgoal = task.measurements.measures[
+        #    DistanceToCurrGoal.cls_uuid
+        #].get_metric()
 
         if (
             hasattr(task, "is_found_called")
             and task.is_found_called
-            and distance_to_subgoal < self._config.SUCCESS_DISTANCE
+            and task.foundDistance < self._config.SUCCESS_DISTANCE
         ):
             self._metric += 1/len(episode.goals)
 
