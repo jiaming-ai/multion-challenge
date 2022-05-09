@@ -112,11 +112,9 @@ class NavigationEpisode(Episode):
 @registry.register_sensor
 class ImageGoalSensor(Sensor):
     r"""Sensor for ImageGoal observations which are used in ImageGoal Navigation.
-
     RGBSensor needs to be one of the Simulator sensors.
     This sensor return the rgb image taken from the goal position to reach with
     random rotation.
-
     Args:
         sim: reference to the simulator for calculating task observations.
         config: config for the ImageGoal sensor.
@@ -634,7 +632,8 @@ class PercentageSuccess(Measure):
         is successful
     """
 
-    cls_uuid: str = "percentage_success"
+    #cls_uuid: str = "percentage_success"
+    cls_uuid: str = "progress"
 
     def __init__(
         self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
@@ -649,7 +648,7 @@ class PercentageSuccess(Measure):
 
     def reset_metric(self, *args: Any, episode, task, **kwargs: Any): ##Called only when episode begins
         task.measurements.check_measure_dependencies(
-            self.uuid, [DistanceToCurrGoal.cls_uuid]
+            self.uuid, [SubSuccess.cls_uuid]
         )
         self._metric=0
         self.update_metric(*args, episode=episode, task=task, **kwargs)
@@ -657,15 +656,12 @@ class PercentageSuccess(Measure):
     def update_metric(
         self, *args: Any, episode, task: EmbodiedTask, **kwargs: Any
     ):
-        #distance_to_subgoal = task.measurements.measures[
-        #    DistanceToCurrGoal.cls_uuid
-        #].get_metric()
+        
+        sub_success = task.measurements.measures[
+            SubSuccess.cls_uuid
+        ].get_metric()
 
-        if (
-            hasattr(task, "is_found_called")
-            and task.is_found_called
-            and task.foundDistance < self._config.SUCCESS_DISTANCE
-        ):
+        if sub_success == 1:
             self._metric += 1/len(episode.goals)
 
 @registry.register_measure
@@ -733,7 +729,8 @@ class SPL(Measure):
 class MSPL(Measure):
     """SPL, but in multigoal case
     """
-    cls_uuid: str = "mspl"
+    #cls_uuid: str = "mspl"
+    cls_uuid: str = "spl"
 
     def __init__(
         self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
@@ -796,7 +793,8 @@ class MSPL(Measure):
 class PSPL(Measure):
     """SPL, but in multigoal case
     """
-    cls_uuid: str = "pspl"
+    #cls_uuid: str = "pspl"
+    cls_uuid: str = "ppl"
 
     def __init__(
         self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
@@ -1288,12 +1286,26 @@ class FowMap(Measure):
         self._sim = sim
         self._config = config
         self._map_resolution = (300, 300)
-        self._coordinate_min = -120.3241-1e-6
-        self._coordinate_max = 120.0399+1e-6
+        self._coordinate_min = -62.3241-1e-6
+        self._coordinate_max = 90.0399+1e-6
         super().__init__()
 
     def _get_uuid(self, *args: Any, **kwargs: Any):
         return "fow_map"
+
+    def conv_grid(
+        self,
+        realworld_x,
+        realworld_y
+    ):
+
+        grid_size = (
+            (self._coordinate_max - self._coordinate_min) / self._map_resolution[0],
+            (self._coordinate_max - self._coordinate_min) / self._map_resolution[1],
+        )
+        grid_x = int((self._coordinate_max - realworld_x) / grid_size[0])
+        grid_y = int((realworld_y - self._coordinate_min) / grid_size[1])
+        return grid_x, grid_y
 
     def reset_metric(self, *args: Any, episode, task, **kwargs: Any):
         self._metric = None
@@ -1303,12 +1315,9 @@ class FowMap(Measure):
 
     def update_metric(self, *args: Any, episode, task: EmbodiedTask, **kwargs: Any):
         agent_position = self._sim.get_agent_state().position
-        a_x, a_y = maps.to_grid(
-            agent_position[0],
+        a_x, a_y = self.conv_grid(
             agent_position[2],
-            self._coordinate_min,
-            self._coordinate_max,
-            self._map_resolution,
+            agent_position[0]
         )
         agent_position = np.array([a_x, a_y])
 
