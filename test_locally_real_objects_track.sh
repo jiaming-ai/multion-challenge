@@ -21,8 +21,9 @@ done
 
 docker run \
     -v $(pwd)/data:/multion-chal-starter/data \
+    -v $(pwd)/data/scene_datasets/hm3d:/multion-chal-starter/data/scene_datasets/hm3d \
     --runtime=nvidia \
     -e "AGENT_EVALUATION_TYPE=local" \
-    -e "TRACK_CONFIG_FILE=/multion-chal-starter/configs/multinav_real.yaml" 
-    ${DOCKER_NAME}\
+    -e "TRACK_CONFIG_FILE=/multion-chal-starter/configs/multinav_real.yaml" \
+    ${DOCKER_NAME}
 

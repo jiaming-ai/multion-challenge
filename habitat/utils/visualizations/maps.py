@@ -53,6 +53,17 @@ TOP_DOWN_MAP_COLORS[MAP_SHORTEST_PATH_COLOR] = [0, 200, 0]  # Green
 TOP_DOWN_MAP_COLORS[MAP_VIEW_POINT_INDICATOR] = [245, 150, 150]  # Light Red
 TOP_DOWN_MAP_COLORS[MAP_TARGET_BOUNDING_BOX] = [0, 175, 0]  # Green
 
+# Multion Objects
+MULTION_CYL_OBJECT_CATEGORY = {'cylinder_red':0, 'cylinder_green':1, 'cylinder_blue':2, 'cylinder_yellow':3, 
+                            'cylinder_white':4, 'cylinder_pink':5, 'cylinder_black':6, 'cylinder_cyan':7}
+MULTION_TOP_DOWN_MAP_START = 20
+TOP_DOWN_MAP_COLORS[MULTION_TOP_DOWN_MAP_START-1] = [150, 150, 150]
+TOP_DOWN_MAP_COLORS[MULTION_TOP_DOWN_MAP_START:MULTION_TOP_DOWN_MAP_START+8] = np.array(
+    [[200, 0, 0], [0, 200, 0], [0, 0, 200], 
+    [255, 255, 0], [250, 250, 250], [250, 45, 185], 
+    [0, 0, 0], [0,255,255]], 
+    dtype=np.uint8
+)
 
 def draw_agent(
     image: np.ndarray,
@@ -295,6 +306,9 @@ def get_topdown_map(
     map_resolution: int = 1024,
     draw_border: bool = True,
     meters_per_pixel: Optional[float] = None,
+    with_sampling: Optional[bool] = True,
+    num_samples: Optional[float] = 500,
+    nav_threshold: Optional[float] = 0.2,
 ) -> np.ndarray:
     r"""Return a top-down occupancy map for a sim. Note, this only returns valid
     values for whatever floor the agent is currently on.
@@ -314,9 +328,15 @@ def get_topdown_map(
             map_resolution, pathfinder=pathfinder
         )
 
-    top_down_map = pathfinder.get_topdown_view(
-        meters_per_pixel=meters_per_pixel, height=height
-    ).astype(np.uint8)
+    if with_sampling:
+        top_down_map = pathfinder.get_topdown_view_with_sampling(
+            meters_per_pixel=meters_per_pixel, height=height,
+            num_samples=num_samples, nav_threshold=nav_threshold
+        ).astype(np.uint8)
+    else:
+        top_down_map = pathfinder.get_topdown_view(
+            meters_per_pixel=meters_per_pixel, height=height
+        ).astype(np.uint8)
 
     # Draw border if necessary
     if draw_border:
@@ -331,6 +351,9 @@ def get_topdown_map_from_sim(
     draw_border: bool = True,
     meters_per_pixel: Optional[float] = None,
     agent_id: int = 0,
+    with_sampling: Optional[bool] = True,
+    num_samples: Optional[float] = 500,
+    nav_threshold: Optional[float] = 0.2,
 ) -> np.ndarray:
     r"""Wrapper around :py:`get_topdown_map` that retrieves that pathfinder and heigh from the current simulator
 
@@ -343,6 +366,9 @@ def get_topdown_map_from_sim(
         map_resolution,
         draw_border,
         meters_per_pixel,
+        with_sampling,
+        num_samples,
+        nav_threshold
     )
 
 

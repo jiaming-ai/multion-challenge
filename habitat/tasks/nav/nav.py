@@ -112,9 +112,11 @@ class NavigationEpisode(Episode):
 @registry.register_sensor
 class ImageGoalSensor(Sensor):
     r"""Sensor for ImageGoal observations which are used in ImageGoal Navigation.
+
     RGBSensor needs to be one of the Simulator sensors.
     This sensor return the rgb image taken from the goal position to reach with
     random rotation.
+
     Args:
         sim: reference to the simulator for calculating task observations.
         config: config for the ImageGoal sensor.
@@ -1054,6 +1056,7 @@ class TopDownMap(Measure):
             self._sim,
             map_resolution=self._map_resolution,
             draw_border=self._config.DRAW_BORDER,
+            with_sampling=False
         )
 
         if self._config.FOG_OF_WAR.DRAW:
