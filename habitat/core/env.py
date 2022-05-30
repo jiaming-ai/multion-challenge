@@ -287,6 +287,12 @@ class Env:
                 self._sim.set_object_motion_type(habitat_sim.physics.MotionType.STATIC, ind)
 
         observations = self.task.reset(episode=self.current_episode)
+        
+        self._task.measurements.reset_measures(
+            episode=self.current_episode,
+            task=self.task,
+            observations=observations,
+        )
             
         return observations
 
