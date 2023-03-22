@@ -47,7 +47,7 @@ cd multion-challenge
 docker build -f Dockerfile -t multi_on:latest .
 ```
 
-Note that we use `configs/multinav.yaml` as the configuration file.
+Note that we use `configs/multinav.yaml` as the configuration file. We use v0.2.2 for both [habitat-sim](https://github.com/facebookresearch/habitat-sim) and [habitat-lab](https://github.com/facebookresearch/habitat-lab).
 
 6. Download scenes [Habitat-Matterport 3D Semantics (HM3D-Semantics)](https://aihabitat.org/datasets/hm3d-semantics/) and place the data in: `multion-challenge/data/scene_datasets/hm3d`. 
 
