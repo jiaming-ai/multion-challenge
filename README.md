@@ -44,7 +44,7 @@ cd multion-challenge
 5. Build the docker container (this may need `sudo` priviliges).
 
 ```
-docker build -f Dockerfile -t multi_on:cyl_latest .
+docker build -f Dockerfile -t multi_on:latest .
 ```
 
 Note that we use `configs/multinav.yaml` as the configuration file.
