@@ -100,9 +100,9 @@ multion-challenge/
 You should see an output like this:
 
 ```
-2022-02-05 11:28:19,591 Initializing dataset MultiObjectNav-v1
-2022-02-05 11:28:19,592 initializing sim Sim-v0
-2022-02-05 11:28:25,368 Initializing task MultiObjectNav-v1
+2023-02-05 11:28:19,591 Initializing dataset MultiObjectNav-v1
+2023-02-05 11:28:19,592 initializing sim Sim-v0
+2023-02-05 11:28:25,368 Initializing task MultiObjectNav-v1
 Progress: 0.0
 PPL: 0.0
 Success: 0.0
