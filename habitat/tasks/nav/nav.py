@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import math
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -755,13 +755,25 @@ class MSPL(Measure):
         self._start_end_episode_distance = 0
         for goal_number in range(len(episode.goals) ):  # Find distances between successive goals and keep adding them
             if goal_number == 0:
-                self._start_end_episode_distance += self._sim.geodesic_distance(
-                    episode.start_position, episode.goals[0].position
+                tmp = self._sim.geodesic_distance(
+                    episode.start_position, episode.goals[0].viewpoints
                 )
+                if math.isinf(tmp):
+                    self._start_end_episode_distance += self._euclidean_distance(
+                        episode.start_position, episode.goals[0].viewpoints
+                        )
+                else:
+                    self._start_end_episode_distance += tmp
             else:
-                self._start_end_episode_distance += self._sim.geodesic_distance(
-                    episode.goals[goal_number - 1].position, episode.goals[goal_number].position
+                tmp = self._sim.geodesic_distance(
+                    episode.goals[goal_number - 1].viewpoints[0], episode.goals[goal_number].viewpoints
                 )
+                if math.isinf(tmp):
+                    self._start_end_episode_distance += self._euclidean_distance(
+                        episode.start_position, episode.goals[0].viewpoints
+                    )
+                else:
+                    self._start_end_episode_distance += tmp
         self._agent_episode_distance = 0.0
         self._metric = None
         task.measurements.check_measure_dependencies(
@@ -790,6 +802,7 @@ class MSPL(Measure):
                 self._start_end_episode_distance, self._agent_episode_distance
             )
         )
+
 
 @registry.register_measure
 class PSPL(Measure):
@@ -820,14 +833,26 @@ class PSPL(Measure):
         self._start_subgoal_agent_distance = []
         for goal_number in range(len(episode.goals) ):  # Find distances between successive goals and keep adding them
             if goal_number == 0:
-                self._start_end_episode_distance += self._sim.geodesic_distance(
-                    episode.start_position, episode.goals[0].position
+                tmp = self._sim.geodesic_distance(
+                    episode.start_position, episode.goals[0].viewpoints
                 )
+                if math.isinf(tmp):
+                    self._start_end_episode_distance += self._euclidean_distance(
+                        episode.start_position, episode.goals[0].viewpoints
+                        )
+                else:
+                    self._start_end_episode_distance += tmp
                 self._start_subgoal_episode_distance.append(self._start_end_episode_distance)
             else:
-                self._start_end_episode_distance += self._sim.geodesic_distance(
-                    episode.goals[goal_number - 1].position, episode.goals[goal_number].position
+                tmp = self._sim.geodesic_distance(
+                    episode.goals[goal_number - 1].viewpoints[0], episode.goals[goal_number].viewpoints
                 )
+                if math.isinf(tmp):
+                    self._start_end_episode_distance += self._euclidean_distance(
+                        episode.start_position, episode.goals[0].viewpoints
+                        )
+                else:
+                    self._start_end_episode_distance += tmp
                 self._start_subgoal_episode_distance.append(self._start_end_episode_distance)
         self._agent_episode_distance = 0.0
         self._metric = None
@@ -1435,6 +1460,11 @@ class DistanceToMultiGoal(Measure):
     def _get_uuid(self, *args: Any, **kwargs: Any):
         return self.cls_uuid
 
+    def _euclidean_distance(self, position_a, position_b):
+        return np.linalg.norm(
+            np.array(position_b) - np.array(position_a), ord=2
+        )
+
     def reset_metric(self, episode, task, *args: Any, **kwargs: Any):
         self._metric = None
         """if self._config.DISTANCE_TO == "VIEW_POINTS":
@@ -1461,6 +1491,32 @@ class DistanceToMultiGoal(Measure):
                 distance_to_target += self._sim.geodesic_distance(
                     episode.goals[goal_number].position, episode.goals[goal_number+1].position
                 )
+        elif self._config.DISTANCE_TO == "VIEW_POINTS":
+            if task.current_goal_index >= len(episode.goals):
+                distance_to_target = self._sim.geodesic_distance(
+                    current_position, episode.goals[-1].viewpoints
+                )
+                if math.isinf(distance_to_target):
+                    distance_to_target = self._euclidean_distance(
+                        current_position, episode.goals[-1].viewpoints[0]
+                        )
+            else:
+                distance_to_target = self._sim.geodesic_distance(
+                    current_position, episode.goals[task.current_goal_index].viewpoints
+                )
+                if math.isinf(distance_to_target):
+                    distance_to_target = self._euclidean_distance(
+                        current_position, episode.goals[task.current_goal_index].viewpoints[0]
+                        )
+            for goal_number in range(task.current_goal_index, len(episode.goals)-1):
+                tmp = self._sim.geodesic_distance(
+                    episode.goals[goal_number].viewpoints[0], episode.goals[goal_number+1].viewpoints
+                )
+                if math.isinf(tmp):
+                    tmp = self._euclidean_distance(
+                        episode.goals[goal_number].viewpoints[0], episode.goals[goal_number+1].viewpoints[0]
+                        )
+                distance_to_target += tmp
 
         self._metric = distance_to_target
 
@@ -1665,11 +1721,12 @@ class DistanceToCurrGoal(Measure):
         self._agent_subgoal_distance = 0.0
         self._metric = None
         if self._config.DISTANCE_TO == "VIEW_POINTS":
-            self._subgoal_view_points = [
-                view_point.agent_state.position
-                for goal in episode.goals[task.current_goal_index]
-                for view_point in goal.view_points
-            ]
+            #self._subgoal_view_points = [
+            #    view_point.agent_state.position
+            #    for goal in episode.goals[task.current_goal_index]
+            #    for view_point in goal.view_points
+            #]
+            self._subgoal_view_points = episode.goals[task.current_goal_index].viewpoints
         self.update_metric(*args, episode=episode, task=task, **kwargs)
 
     def _euclidean_distance(self, position_a, position_b):
@@ -1684,10 +1741,26 @@ class DistanceToCurrGoal(Measure):
                 current_position, episode.goals[task.current_goal_index].position
             )
         elif self._config.DISTANCE_TO == "VIEW_POINTS":
-            distance_to_subgoal = self._sim.geodesic_distance(
-                current_position, self._subgoal_view_points
-            )
-
+            # distance_to_subgoal = self._sim.geodesic_distance(
+            #     current_position, self._subgoal_view_points
+            # )
+            distances = []
+            goal_coord = episode.goals[task.current_goal_index].position
+            goal_coord2D = [goal_coord[0], goal_coord[2]]
+            for viewpoint in self._subgoal_view_points:
+                tmp = self._sim.geodesic_distance(current_position, viewpoint)
+                viewpoint2D = [viewpoint[0], viewpoint[2]]
+                tmp += self._euclidean_distance(viewpoint2D, goal_coord2D)
+                distances.append(tmp)
+            distance_to_subgoal = min(distances)
+            if math.isinf(distance_to_subgoal):
+                currpos2D = [current_position[0], current_position[2]]
+                for viewpoint in self._subgoal_view_points:
+                    viewpoint2D = [viewpoint[0], viewpoint[2]]
+                    tmp = self._euclidean_distance(currpos2D, viewpoint2D)
+                    tmp += self._euclidean_distance(viewpoint2D, goal_coord2D)
+                    distances.append(tmp)
+            distance_to_subgoal = min(distances)
         else:
             logger.error(
                 f"Non valid DISTANCE_TO parameter was provided: {self._config.DISTANCE_TO}"

@@ -24,7 +24,7 @@ from habitat.sims import make_sim
 from habitat.tasks import make_task
 from habitat.utils import profiling_wrapper
 import habitat_sim
-import magnum as mn
+import magnum
 
 COORDINATE_EPSILON = 1e-6
 COORDINATE_MIN = -62.3241 - COORDINATE_EPSILON
@@ -246,7 +246,59 @@ class Env:
 
         self._current_episode = next(self._episode_iterator)
         self.reconfigure(self._config)
-        
+        rigid_obj_mgr = self._sim.get_rigid_object_manager()
+        self.object_to_datset_mapping = self._dataset.category_to_task_category_id
+        # Remove existing objects from last episode
+        rigid_obj_mgr.remove_all_objects()
+
+        # Insert current episode objects
+        obj_path = self._config.TASK.OBJECTS_PATH
+
+        obj_templates_mgr = self._sim.get_object_template_manager()
+        obj_templates_mgr.load_configs(obj_path, True)
+
+        for i in range(len(self.current_episode.goals)):
+            current_goal = self.current_episode.goals[i].object_category
+            object_id = self.current_episode.goals[i].object_id
+            dataset_index = self.object_to_datset_mapping[current_goal]
+
+            # obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
+            obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
+            object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
+            obj_node = object_box.root_scene_node
+            obj_bb = obj_node.cumulative_bb
+            jj = obj_bb.back_bottom_left
+            jj = [jj[0], jj[2], jj[1]]
+            diff = np.array(self.current_episode.goals[i].position)
+            diff2 = diff - jj
+            diff2[2] += jj[2] * 2
+            diff2[1] += 0.05
+            object_box.semantic_id = dataset_index
+            object_box.translation = np.array(diff2)
+            object_box.rotate_x(magnum.Rad(-1.5708))
+
+        if self._config.TASK.INCLUDE_DISTRACTORS:
+            for i in range(len(self.current_episode.distractors)):
+                current_distractor = self.current_episode.distractors[i].object_category
+                object_id = self.current_episode.distractors[i].object_id
+
+                dataset_index = self.object_to_datset_mapping[current_distractor]
+
+                obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
+                object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
+                obj_node = object_box.root_scene_node
+                obj_bb = obj_node.cumulative_bb
+                jj = obj_bb.back_bottom_left
+                jj = [jj[0], jj[2], jj[1]]
+                diff = np.array(self.current_episode.distractors[i].position)
+                diff2 = diff - jj
+                diff2[2] += jj[2] * 2
+                diff2[1] += 0.05
+                object_box.semantic_id = dataset_index
+                object_box.translation = np.array(diff2)
+                object_box.rotate_x(magnum.Rad(-1.5708))
+
+        '''
         # Remove existing objects from last episode
         for objid in self._sim.get_existing_object_ids():
             self._sim.remove_object(objid)
@@ -285,7 +337,7 @@ class Env:
                 )
                 self._sim.set_rotation(y_rotation, ind)
                 self._sim.set_object_motion_type(habitat_sim.physics.MotionType.STATIC, ind)
-
+        '''
         observations = self.task.reset(episode=self.current_episode)
         
         self._task.measurements.reset_measures(

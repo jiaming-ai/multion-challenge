@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-DOCKER_NAME="multi_on:real_latest"
+DOCKER_NAME="multi_on:latest"
 
 while [[ $# -gt 0 ]]
 do
@@ -24,6 +24,6 @@ docker run \
     -v $(pwd)/data/scene_datasets/hm3d:/multion-chal-starter/data/scene_datasets/hm3d \
     --runtime=nvidia \
     -e "AGENT_EVALUATION_TYPE=local" \
-    -e "TRACK_CONFIG_FILE=/multion-chal-starter/configs/multinav_real.yaml" \
+    -e "TRACK_CONFIG_FILE=/multion-chal-starter/configs/multinav.yaml" \
     ${DOCKER_NAME}
 

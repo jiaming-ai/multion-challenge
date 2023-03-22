@@ -10,6 +10,7 @@ from typing import Any, List, Optional
 import attr
 import numpy as np
 from gym import spaces
+import magnum
 
 import random
 import magnum as mn
@@ -38,7 +39,9 @@ class MultiObjectGoalNavEpisode(NavigationEpisode):
     object_category: Optional[List[str]] = None
     object_index: Optional[int]
     current_goal_index: Optional[int] = 0
-    distractors: List[Any] = []  
+    distractors: List[Any] = []
+
+
 
     @property
     def goals_key(self) -> str:
@@ -122,6 +125,8 @@ class MultiObjectGoal(NavigationGoal):
     room_id: Optional[str] = None
     room_name: Optional[str] = None
     position: Optional[List[List[float]]]
+    object_id: Optional[str] = None
+    viewpoints: Optional[list] = None
 
 
 
@@ -204,52 +209,61 @@ class MultiObjectNavigationTask(NavigationTask):
     ) -> None:
         super().__init__(config=config, sim=sim, dataset=dataset)
         self.current_goal_index=0
+        self.object_to_datset_mapping = dataset.category_to_task_category_id
+
 
     def reset(self, episode: MultiObjectGoalNavEpisode):
+        rigid_obj_mgr = self._sim.get_rigid_object_manager()
+
         # Remove existing objects from last episode
-        for objid in self._sim.get_existing_object_ids():
-            self._sim.remove_object(objid)
+        rigid_obj_mgr.remove_all_objects()
 
         # Insert current episode objects
+        obj_path = self._config.OBJECTS_PATH
+
         obj_templates_mgr = self._sim.get_object_template_manager()
-        obj_type = self._config.OBJECTS_TYPE
-        if obj_type == "CYL":
-            obj_path = self._config.CYL_OBJECTS_PATH
-        else:
-            obj_path = self._config.REAL_OBJECTS_PATH
-            
+        obj_templates_mgr.load_configs(obj_path, True)
+
         for i in range(len(episode.goals)):
             current_goal = episode.goals[i].object_category
-            object_index = obj_templates_mgr.load_configs(
-                str(os.path.join(obj_path, current_goal))
-            )[0]
-            ind = self._sim.add_object(object_index)
-            self._sim.set_translation(np.array(episode.goals[i].position), ind)
-            
-            # random rotation only on the Y axis
-            # y_rotation = mn.Quaternion.rotation(
-            #     mn.Rad(random.random() * 2 * math.pi), mn.Vector3(0, 1.0, 0)
-            # )
-            # self._sim.set_rotation(y_rotation, ind)
-            
-            # self._sim.set_object_motion_type(habitat_sim.physics.MotionType.STATIC, ind)
-            
+            object_id = episode.goals[i].object_id
+            dataset_index = self.object_to_datset_mapping[current_goal]
+
+            # obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
+            obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
+            object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
+            obj_node = object_box.root_scene_node
+            obj_bb = obj_node.cumulative_bb
+            jj = obj_bb.back_bottom_left
+            jj = [jj[0], jj[2], jj[1]]
+            diff = np.array(episode.goals[i].position)
+            diff2 = diff - jj
+            diff2[2] += jj[2] * 2
+            diff2[1] += 0.05
+            object_box.semantic_id = dataset_index
+            object_box.translation = np.array(diff2)
+            object_box.rotate_x(magnum.Rad(-1.5708))
+
         if self._config.INCLUDE_DISTRACTORS:
             for i in range(len(episode.distractors)):
                 current_distractor = episode.distractors[i].object_category
-                dataset_index = obj_templates_mgr.load_configs(
-                    str(os.path.join(obj_path, current_distractor))
-                )[0]
-                
-                ind = self._sim.add_object(dataset_index)
-                self._sim.set_translation(np.array(episode.distractors[i].position), ind)
-                
-                # random rotation only on the Y axis
-                y_rotation = mn.Quaternion.rotation(
-                    mn.Rad(random.random() * 2 * math.pi), mn.Vector3(0, 1.0, 0)
-                )
-                self._sim.set_rotation(y_rotation, ind)
-                self._sim.set_object_motion_type(habitat_sim.physics.MotionType.STATIC, ind)
+                object_id = episode.distractors[i].object_id
+
+                dataset_index = self.object_to_datset_mapping[current_distractor]
+
+                obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
+                object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
+                obj_node = object_box.root_scene_node
+                obj_bb = obj_node.cumulative_bb
+                jj = obj_bb.back_bottom_left
+                jj = [jj[0], jj[2], jj[1]]
+                diff = np.array(episode.distractors[i].position)
+                diff2 = diff - jj
+                diff2[2] += jj[2] * 2
+                diff2[1] += 0.05
+                object_box.semantic_id = dataset_index
+                object_box.translation = np.array(diff2)
+                object_box.rotate_x(magnum.Rad(-1.5708))
 
         # Reinitialize current goal index
         self.current_goal_index = 0
@@ -268,8 +282,4 @@ class MultiObjectNavigationTask(NavigationTask):
             action_instance.reset(episode=episode, task=self)
 
         return observations
-        
-    # def _check_episode_is_active(self, *args: Any, **kwargs: Any) -> bool:  
-    #     self.measurements.measures[
-    #         "success"
-    #     ].get_metric()
+

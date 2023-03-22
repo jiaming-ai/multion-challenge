@@ -225,7 +225,7 @@ _C.TASK.INSTRUCTION_SENSOR_UUID = "instruction"
 # -----------------------------------------------------------------------------
 _C.TASK.DISTANCE_TO_GOAL = CN()
 _C.TASK.DISTANCE_TO_GOAL.TYPE = "DistanceToGoal"
-_C.TASK.DISTANCE_TO_GOAL.DISTANCE_TO = "POINT"
+_C.TASK.DISTANCE_TO_GOAL.DISTANCE_TO = "VIEW_POINTS"
 # -----------------------------------------------------------------------------
 # # ANSWER_ACCURACY MEASUREMENT
 # -----------------------------------------------------------------------------
@@ -234,9 +234,7 @@ _C.TASK.ANSWER_ACCURACY.TYPE = "AnswerAccuracy"
 # -----------------------------------------------------------------------------
 # # MULTION TASK
 # -----------------------------------------------------------------------------
-_C.TASK.CYL_OBJECTS_PATH = "data/multion_cyl_objects"
-_C.TASK.REAL_OBJECTS_PATH = "data/multion_real_objects"
-_C.TASK.OBJECTS_TYPE = "CYL" #"REAL" or "CYL"
+_C.TASK.OBJECTS_PATH = "data/objects"
 _C.TASK.INCLUDE_DISTRACTORS = True
 _C.TASK.ACTIONS.FOUND = CN()
 _C.TASK.ACTIONS.FOUND.TYPE = "FoundObjectAction"
@@ -245,7 +243,7 @@ _C.TASK.ACTIONS.FOUND.TYPE = "FoundObjectAction"
 # -----------------------------------------------------------------------------
 _C.TASK.DISTANCE_TO_MULTI_GOAL = CN()
 _C.TASK.DISTANCE_TO_MULTI_GOAL.TYPE = "DistanceToMultiGoal"
-_C.TASK.DISTANCE_TO_MULTI_GOAL.DISTANCE_TO = "POINT"
+_C.TASK.DISTANCE_TO_MULTI_GOAL.DISTANCE_TO = "VIEW_POINTS"
 # -----------------------------------------------------------------------------
 # # EPISODE_LENGTH MEASUREMENT
 # -----------------------------------------------------------------------------
@@ -256,7 +254,7 @@ _C.TASK.EPISODE_LENGTH.TYPE = "EpisodeLength"
 # -----------------------------------------------------------------------------
 _C.TASK.RATIO = CN()
 _C.TASK.RATIO.TYPE = "Ratio"
-_C.TASK.RATIO.DISTANCE_TO = "POINT"
+_C.TASK.RATIO.DISTANCE_TO = "VIEW_POINTS"
 
 _C.TASK.RAW_METRICS = CN()
 _C.TASK.RAW_METRICS.TYPE = "RawMetrics"
@@ -265,31 +263,31 @@ _C.TASK.RAW_METRICS.TYPE = "RawMetrics"
 # -----------------------------------------------------------------------------
 _C.TASK.DISTANCE_TO_CURR_GOAL = CN()
 _C.TASK.DISTANCE_TO_CURR_GOAL.TYPE = "DistanceToCurrGoal"
-_C.TASK.DISTANCE_TO_CURR_GOAL.DISTANCE_TO = "POINT"
+_C.TASK.DISTANCE_TO_CURR_GOAL.DISTANCE_TO = "VIEW_POINTS"
 # -----------------------------------------------------------------------------
 # # SUB_SUCCESS MEASUREMENT
 # -----------------------------------------------------------------------------
 _C.TASK.SUB_SUCCESS = CN()
 _C.TASK.SUB_SUCCESS.TYPE = "SubSuccess"
-_C.TASK.SUB_SUCCESS.SUCCESS_DISTANCE = 1.0
+_C.TASK.SUB_SUCCESS.SUCCESS_DISTANCE = 1.5
 # -----------------------------------------------------------------------------
 # # ORACLE_SUB_SUCCESS MEASUREMENT
 # -----------------------------------------------------------------------------
 _C.TASK.ORACLE_SUB_SUCCESS = CN()
 _C.TASK.ORACLE_SUB_SUCCESS.TYPE = "OracleSubSuccess"
-_C.TASK.ORACLE_SUB_SUCCESS.SUCCESS_DISTANCE = 1.0
+_C.TASK.ORACLE_SUB_SUCCESS.SUCCESS_DISTANCE = 1.5
 # -----------------------------------------------------------------------------
 # # PERCENTAGE_SUCCESS MEASUREMENT
 # -----------------------------------------------------------------------------
 _C.TASK.PERCENTAGE_SUCCESS = CN()
 _C.TASK.PERCENTAGE_SUCCESS.TYPE = "PercentageSuccess"
-_C.TASK.PERCENTAGE_SUCCESS.SUCCESS_DISTANCE = 1.0
+_C.TASK.PERCENTAGE_SUCCESS.SUCCESS_DISTANCE = 1.5
 # -----------------------------------------------------------------------------
 # SUCCESS MEASUREMENT
 # -----------------------------------------------------------------------------
 _C.TASK.SUCCESS = CN()
 _C.TASK.SUCCESS.TYPE = "Success"
-_C.TASK.SUCCESS.SUCCESS_DISTANCE = 0.2
+_C.TASK.SUCCESS.SUCCESS_DISTANCE = 1.5
 # -----------------------------------------------------------------------------
 # MSPL MEASUREMENT
 # -----------------------------------------------------------------------------
@@ -443,12 +441,12 @@ _C.SIMULATOR.FISHEYE_SEMANTIC_SENSOR.TYPE = "HabitatSimFisheyeSemanticSensor"
 _C.SIMULATOR.AGENT_0 = CN()
 _C.SIMULATOR.AGENT_0.HEIGHT = 1.5
 _C.SIMULATOR.AGENT_0.RADIUS = 0.1
-_C.SIMULATOR.AGENT_0.MASS = 32.0
-_C.SIMULATOR.AGENT_0.LINEAR_ACCELERATION = 20.0
-_C.SIMULATOR.AGENT_0.ANGULAR_ACCELERATION = 4 * 3.14
-_C.SIMULATOR.AGENT_0.LINEAR_FRICTION = 0.5
-_C.SIMULATOR.AGENT_0.ANGULAR_FRICTION = 1.0
-_C.SIMULATOR.AGENT_0.COEFFICIENT_OF_RESTITUTION = 0.0
+#_C.SIMULATOR.AGENT_0.MASS = 32.0
+#_C.SIMULATOR.AGENT_0.LINEAR_ACCELERATION = 20.0
+#_C.SIMULATOR.AGENT_0.ANGULAR_ACCELERATION = 4 * 3.14
+#_C.SIMULATOR.AGENT_0.LINEAR_FRICTION = 0.5
+#_C.SIMULATOR.AGENT_0.ANGULAR_FRICTION = 1.0
+#_C.SIMULATOR.AGENT_0.COEFFICIENT_OF_RESTITUTION = 0.0
 _C.SIMULATOR.AGENT_0.SENSORS = ["RGB_SENSOR"]
 _C.SIMULATOR.AGENT_0.IS_SET_START_STATE = False
 _C.SIMULATOR.AGENT_0.START_POSITION = [0, 0, 0]

@@ -2,6 +2,8 @@ import sys
 sys.path.insert(0, "")
 import numpy as np
 import habitat
+import os
+os.environ["CHALLENGE_CONFIG_FILE"] = "./configs/multinav.yaml"
 
 class RandomWalker(habitat.Agent):
     def __init__(self, task_config: habitat.Config):
@@ -15,7 +17,7 @@ class RandomWalker(habitat.Agent):
 
 def main():
     
-    config = habitat.get_config("./configs/multinav_real.yaml")
+    config = habitat.get_config("./configs/multinav.yaml")
     agent = RandomWalker(task_config=config)
     
     challenge = habitat.Challenge()
