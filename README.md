@@ -1,31 +1,25 @@
-# MultiON Challenge 2022
+# MultiON Challenge 2023
 
-This repository contains submission guidelines and starter code for the MultiON Challenge 2022. For challenge overview, check [challenge webpage](http://multion-challenge.cs.sfu.ca). To participate, visit EvalAI challenge [page](https://eval.ai/web/challenges/challenge-page/1617/overview).
+This repository contains submission guidelines and starter code for the MultiON Challenge 2023. For challenge overview, check [challenge webpage](http://multion-challenge.cs.sfu.ca). To participate, visit EvalAI challenge [page](https://eval.ai/web/challenges/challenge-page/2002/overview).
 
-To receive challenge updates, please join our Google Group email list: [click here](https://groups.google.com/g/multion-challenge-2022/) to join or send an email to [multion-challenge-2022+subscribe@googlegroups.com](mailto:multion-challenge-2022+subscribe@googlegroups.com).
+To receive challenge updates, please join our Google Group email list: [click here](https://groups.google.com/g/multion-challenge-2023) to join or send an email to [multion-challenge-2023+subscribe@googlegroups.com](mailto:multion-challenge-2023+subscribe@googlegroups.com).
 
 ## Task
 
-In MultiON, an agent is tasked with navigating to a sequence of objects. These objects are flexibly inserted into a realistic 3D environment. The task is based on the [AI Habitat](https://aihabitat.org/) and [Habitat-Matterport 3D (HM3D)](https://aihabitat.org/datasets/hm3d) scenes. 
+In MultiON, an agent is tasked with navigating to a sequence of objects. These objects are flexibly inserted into a realistic 3D environment. The task is based on the [AI Habitat](https://aihabitat.org/) and [Habitat-Matterport 3D Semantics (HM3D-Semantics)](https://aihabitat.org/datasets/hm3d-semantics/) scenes. 
 
-This year the challenge has two separate tracks. 
-- CYLINDER Track: Each episode contains 5 target objects randomly sampled from a set of 8 cylinders with identical shapes but different colors.
+Each episode contains 3 target objects randomly sampled from a set of 50 classes. For every class there are multiple objects available (e.g., for the "notebook" class there are 9 different objects). We did this to add instance-level variation within each category and test the perception capabilities of the agents. We used 3D objects from ShapeNet. Additionally:
+- The training set contains only 40 possible classes, the validation 45 (with 5 "zero-shot objects"), and the test/test challenge have 45 (with 5 "zero-shot objects", different from the validation ones).
+- Each episode contains 5 distractor (non-target) objects randomly scattered on surfaces around the environment, to increase the difficulty of the task.
 
-- REAL-OBJECTS Track: Each episode contains 5 target objects randomly sampled from a set of 8 realistic looking 3D objects.
-
-Additionally, there are some other changes from last year.
-
-- Both the tracks contain five target objects (5ON) in contrast to three (3ON) from last year's challenge.
-- The episodes contain some distractor (non-target) objects randomly scattered around the environment, to increase the difficulty of the task.
-
-In summary, in each episode, the agent is initialized at a random starting position and orientation in an unseen environment and provided a sequence of 5 target objects randomly sampled (without replacement) from the set of 8 objects. The agent must navigate to each target object in the sequence (in the given order), avoiding distractor objects and enact the FOUND action to indicate discovery. The agent has access to an RGB-D camera and a noiseless GPS+Compass sensor. GPS+Compass sensor provides the agent's current location and orientation information relative to the start of the episode.
-
+In summary, in each episode, the agent is initialized at a random starting position and orientation in an unseen environment and provided a sequence of 3 target objects randomly sampled (without replacement) from the set of 50 objects. The agent must navigate to each target object in the sequence (in the given order), avoiding distractor objects and and call the FOUND action to indicate discovery. The agent has access to an RGB-D camera and a noiseless GPS+Compass sensor. GPS+Compass sensor provides the agent's current location and orientation information relative to the start of the episode.
 
 ## Dataset
-We use [Habitat-Matterport 3D (HM3D)](https://aihabitat.org/datasets/hm3d) for the challenge. Each episode contains five sequential targets and some distractor objects. For this year's challenge, we focus on the task of 5-ON or 5 object navigation with cylinder and realistic objects.
+We use [Habitat-Matterport 3D Semantics (HM3D-Semantics)](https://aihabitat.org/datasets/hm3d-semantics/) for the challenge. Each episode contains 3 sequential targets and some distractor objects.
 
 ## Evaluation
-We extend the evaluation protocol of [ObjectNav](https://arxiv.org/abs/2006.13171). We use two metrics to evaluate agent performance:  
+
+The episode terminates when an agent discovers all objects in the sequence of the current episode or when it calls an incorrect FOUND action. A FOUND action is incorrect if it is called when the agent is not within a 1.5m from its current target object. Note that this does not require the agent to be viewing the object at the time of calling FOUND. After the episode terminates, the agent is evaluated using the Progress and PPL metrics that are defined below.  
 **Progress**: Fraction of object goals that are successfully FOUND. This effectively measures if the agent was able to navigate to goals.  
 **PPL**: Overall path length weighted by progress. This effectively measures the path efficiency of the agent. Formally, 
 
@@ -33,7 +27,7 @@ We extend the evaluation protocol of [ObjectNav](https://arxiv.org/abs/2006.1317
 
 ## Submission Guidelines 
 
-To participate in the challenge, visit our [EvalAI](https://eval.ai/web/challenges/challenge-page/1617/overview) page. Participants need to upload docker containers with their agents using EvalAI. Before making your submission, you should run your container locally on the minival data split to ensure the performance metrics match with those of remote evaluation. We provide a base docker image and participants only need to edit `evaluate.py` file which implements the navigation agent. Instructions for building your docker container are provided below.
+To participate in the challenge, visit our [EvalAI](https://eval.ai/web/challenges/challenge-page/2002/overview) page. Participants need to upload docker containers with their agents using EvalAI. Before making your submission, you should run your container locally on the minival data split to ensure the performance metrics match with those of remote evaluation. We provide a base docker image and participants only need to edit `evaluate.py` file which implements the navigation agent. Instructions for building your docker container are provided below.
 
 
 1. Install [nvidia-docker v2](https://github.com/NVIDIA/nvidia-docker) by following instructions given [here](https://github.com/nvidia/nvidia-docker/wiki/Installation-(version-2.0)).
@@ -45,46 +39,30 @@ cd multion-challenge
 ```
 3. Edit `evaluate.py` to implement your agent. Currently, it uses an agent taking random actions.
 
-4. Make changes in the the provided Dockerfile corresponding to each track if your agent has additional dependencies. They should be installed inside a conda environment named `habitat` that already exists in our docker. For the CYLINDER Track, use Dockerfile_cylinder_objects_track, and for REAL-OBJECTS Track, use Dockerfile_real_objects_track.
+4. Make changes in the the provided `Dockerfile` if your agent has additional dependencies. They should be installed inside a conda environment named `habitat` that already exists in our docker.
 
 5. Build the docker container (this may need `sudo` priviliges).
 
 ```
-# For the CYLINDER Track
-docker build -f Dockerfile_cylinder_objects_track -t multi_on:cyl_latest .
+docker build -f Dockerfile -t multi_on:cyl_latest .
 ```
 
-```
-# For the REAL-OBJECTS Track
-docker build -f Dockerfile_real_objects_track -t multi_on:real_latest .
-```
+Note that we use `configs/multinav.yaml` as the configuration file.
 
-Note that we use `configs/multinav_cyl.yaml` for the CYLINDER Track and `configs/multinav_real.yaml` for the REAL-OBJECTS Track. The two configs use `OBJECTS_TYPE` to specify the type of objects to be used and the corresponding objects path specified by `CYL_OBJECTS_PATH` and `REAL_OBJECTS_PATH` respectively.
+6. Download scenes [Habitat-Matterport 3D Semantics (HM3D-Semantics)](https://aihabitat.org/datasets/hm3d-semantics/) and place the data in: `multion-challenge/data/scene_datasets/hm3d`. 
 
-6. Download HM3D scenes [here](https://aihabitat.org/datasets/hm3d) and place the data in: `multion-challenge/data/scene_datasets/hm3d`. 
-
-Download the objects for the two tracks:
+Download the objects:
 ```
-wget -O multion_cyl_objects.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/multion_cyl_objects"
-wget -O multion_real_objects.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/multion_real_objects"
+wget -O objects.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2023/challenge/objects.zip"
+wget -O default.phys_scene_config.json "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2023/challenge/default.phys_scene_config.json"
 ```
 
 Extract them under `multion-challenge/data`.
 
-Download the dataset for different splits of the two tracks.
+Download the dataset.
 
 ```
-# For the CYLINDER Track
-wget -O 5_ON_CYL_minival.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_CYL_minival"
-wget -O 5_ON_CYL_val.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_CYL_val"
-wget -O 5_ON_CYL_train.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_CYL_train"
-```
-
-```
-# For the REAL-OBJECTS Track
-wget -O 5_ON_REAL_minival.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_REAL_minival"
-wget -O 5_ON_REAL_val.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_REAL_val"
-wget -O 5_ON_REAL_train.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2022/challenge/dataset/5_ON_REAL_train"
+wget -O datasets.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2023/challenge/datasets.zip"
 ```
 
 Extract them and place them inside `multion-challenge/data` in the following format:
@@ -95,50 +73,30 @@ multion-challenge/
     scene_datasets/
       hm3d/
           ...
-    multion_cyl_objects/
+    default.phys_scene_config.json
+    objects/
         ...
-    multion_real_objects/
-        ...
-    5_ON_CYL/
-        train/
-            content/
-                ...
-            train.json.gz
-        minival/
-            content/
-                ...
-            minival.json.gz
-        val/
-            content/
-                ...
-            val.json.gz
-    5_ON_REAL/
-        train/
-            content/
-                ...
-            train.json.gz
-        minival/
-            content/
-                ...
-            minival.json.gz
-        val/
-            content/
-                ...
-            val.json.gz
+    datasets/
+        3_ON/
+            train/
+              content/
+                  ...
+              train.json.gz
+            minival/
+                content/
+                    ...
+                minival.json.gz
+            val/
+                content/
+                    ...
+                val.json.gz
 ```
 
 7. Test the docker container locally.
 
 ```
-# For the CYLINDER Track
-./test_locally_cylinder_objects_track.sh --docker-name multi_on:cyl_latest
+./test_locally.sh --docker-name multi_on:latest
 ```
-
-```
-# For the REAL-OBJECTS Track
-./test_locally_real_objects_track.sh --docker-name multi_on:real_latest
-```
-
 You should see an output like this:
 
 ```
@@ -165,7 +123,7 @@ evalai push multi_on:latest --phase <phase-name>
 ```
 
 
-## Citing MultiON Challenge 2022
+## Citing MultiON Challenge 2023
 If you use the multiON framework, please consider citing the following [paper](https://arxiv.org/pdf/2012.03912.pdf):
 ```
 @inproceedings{wani2020multion,
@@ -178,14 +136,3 @@ If you use the multiON framework, please consider citing the following [paper](h
 
 ## Acknowledgements
 We thank the [habitat](https://aihabitat.org/) team for building the habitat framework and providing the HM3D scenes. We also thank [EvalAI](https://eval.ai/) team who helped us host the challenge.
-We use freely available 3D models for the natural/real objects in our dataset:
-```
-https://sketchfab.com/3d-models/ibanez-frm250-0daa01bcb98b43f4bfa9df94ef3e032b
-https://sketchfab.com/3d-models/electric-piano-c0db37cce36c46eeb868d487c522ad93
-https://sketchfab.com/3d-models/teddy-bear-459ce5b99da947438d3ea11d7c0d4225
-https://sketchfab.com/3d-models/rocking-horse-a528a0b436ea4856a59395d72424bfed
-https://sketchfab.com/3d-models/retreat-herschel-bag-3f5948f7f47343acb868072a7fe92ada
-https://sketchfab.com/3d-models/trolley-bag-8c44e0d93ee1423a847f86b279fdb598
-https://sketchfab.com/3d-models/basket-bullet-10-lb-d18692ce01d74c368ab953812e3b80d0
-https://sketchfab.com/3d-models/stylized-toy-train-7e6c696592ee4cb3b7fab42325420079
-```
