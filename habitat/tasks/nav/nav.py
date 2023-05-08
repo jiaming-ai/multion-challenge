@@ -1735,7 +1735,10 @@ class DistanceToCurrGoal(Measure):
         )
 
     def update_metric(self, episode, task, *args: Any, **kwargs: Any):
-        self._subgoal_view_points = episode.goals[task.current_goal_index].viewpoints
+        if task.current_goal_index >= len(episode.goals):
+            self._subgoal_view_points = episode.goals[-1].viewpoints
+        else:
+            self._subgoal_view_points = episode.goals[task.current_goal_index].viewpoints
         current_position = self._sim.get_agent_state().position.tolist()
         if self._config.DISTANCE_TO == "POINT":
             distance_to_subgoal= self._sim.geodesic_distance(
