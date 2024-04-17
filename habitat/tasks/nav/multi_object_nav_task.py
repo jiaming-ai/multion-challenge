@@ -29,6 +29,8 @@ from habitat.tasks.nav.nav import (
     NavigationTask,
 )
 
+import clip
+import re
 
 @attr.s(auto_attribs=True, kw_only=True)
 class MultiObjectGoalNavEpisode(NavigationEpisode):
@@ -40,6 +42,14 @@ class MultiObjectGoalNavEpisode(NavigationEpisode):
     object_index: Optional[int]
     current_goal_index: Optional[int] = 0
     distractors: List[Any] = []
+
+    #
+    scene_dataset_config: str = attr.ib(
+        default="default", validator=not_none_validator
+    )
+    additional_obj_config_paths: List[str] = attr.ib(
+        default=[], validator=not_none_validator
+    )
 
 
 
@@ -73,33 +83,53 @@ class ObjectViewLocation:
     iou: Optional[float]
 
 
-@attr.s(auto_attribs=True, kw_only=True)
-class ObjectGoal(NavigationGoal):
-    r"""Object goal provides information about an object that is target for
-    navigation. That can be specify object_id, position and object
-    category. An important part for metrics calculation are view points that
-     describe success area for the navigation.
+@attr.s(auto_attribs=True)
+class ObjectDesc:
+    r"""ObjectDesc provides information about the object instance id, centroid and
+    bounding box of the object. This is used to store details about the target
+    objects while creating the dataset.
 
     Args:
-        object_id: id that can be used to retrieve object from the semantic
-        scene annotation
+        object_id: unique id of the object.
+        centroid: 3D location of the centroid of the object.
+        aabb: aabb of the object.
+            [
+                bb.back_bottom_left,
+                bb.back_bottom_right,
+                bb.back_top_right,
+                bb.back_top_left,
+                bb.front_top_left,
+                bb.front_top_right,
+                bb.front_bottom_right,
+                bb.front_bottom_left,
+            ]
+        nearest_nav_point: snapped point
+        navigable_points: nearest navigable points within a threshold of the snapped point
+    """
+    object_id: str
+    centroid: List[float]
+    aabb: List[List[float]]
+    nearest_nav_point: List[float]
+    navigable_points: Optional[List[List[float]]] = None
+
+
+@attr.s(auto_attribs=True)
+class Extras:
+    r"""Extra information about the dataset.
+    Args:
         object_name: name of the object
         object_category: object category name usually similar to scene semantic
         categories
         room_id: id of a room where object is located, can be used to retrieve
         room from the semantic scene annotation
         room_name: name of the room, where object is located
-        view_points: navigable positions around the object with specified
-        proximity of the object surface used for navigation metrics calculation.
-        The object is visible from these positions.
     """
-
-    object_id: str = attr.ib(default=None, validator=not_none_validator)
     object_name: Optional[str] = None
     object_category: Optional[str] = None
+    ref_object: Optional[ObjectDesc] = None
+    ref_object_category: Optional[str] = None
     room_id: Optional[str] = None
     room_name: Optional[str] = None
-    view_points: Optional[List[ObjectViewLocation]] = None
 
 @attr.s(auto_attribs=True, kw_only=True)
 class MultiObjectGoal(NavigationGoal):
@@ -121,12 +151,11 @@ class MultiObjectGoal(NavigationGoal):
         The object is visible from these positions.
     """
 
+    goal_object: Optional[List[ObjectDesc]]
+    language_instruction: Optional[str] = None
+    extras: Optional[Extras] = None
+    #TODO: added
     object_category: Optional[str] = None
-    room_id: Optional[str] = None
-    room_name: Optional[str] = None
-    position: Optional[List[List[float]]]
-    object_id: Optional[str] = None
-    viewpoints: Optional[list] = None
 
 
 
@@ -147,15 +176,17 @@ class MultiObjectGoalSensor(Sensor):
         of categories id to text mapping.
     """
 
+    cls_uuid: str = "multiobjectgoal"
+
     def __init__(
-        self, sim, config: Config, dataset: Dataset, *args: Any, **kwargs: Any
+            self, sim, config, dataset: Dataset, *args: Any, **kwargs: Any
     ):
         self._sim = sim
         self._dataset = dataset
         super().__init__(config=config)
 
     def _get_uuid(self, *args: Any, **kwargs: Any):
-        return "multiobjectgoal"
+        return self.cls_uuid
 
     def _get_sensor_type(self, *args: Any, **kwargs: Any):
         return SensorTypes.SEMANTIC
@@ -163,23 +194,41 @@ class MultiObjectGoalSensor(Sensor):
     def _get_observation_space(self, *args: Any, **kwargs: Any):
         sensor_shape = (1,)
         max_value = (self.config.GOAL_SPEC_MAX_VAL - 1,)
-        if self.config.GOAL_SPEC == "TASK_CATEGORY_ID":
+        if self.config.GOAL_SPEC == "CATEGORY_LABEL_TEXT":
+            return spaces.Box(low=0, high=np.inf, shape=(77,), dtype=np.int64)
+        elif self.config.GOAL_SPEC == "TASK_CATEGORY_ID":
             max_value = max(
                 self._dataset.category_to_task_category_id.values()
             )
 
-        return spaces.Box(
-            low=0, high=max_value, shape=sensor_shape, dtype=np.int64
-        )
+            return spaces.Box(
+                low=0, high=max_value, shape=sensor_shape, dtype=np.int64
+            )
 
     def get_observation(
-        self,
-        observations,
-        *args: Any,
-        episode: MultiObjectGoalNavEpisode,
-        **kwargs: Any,
+            self,
+            observations,
+            *args: Any,
+            episode: MultiObjectGoalNavEpisode,
+            **kwargs: Any,
     ) -> Optional[int]:
-        if self.config.GOAL_SPEC == "TASK_CATEGORY_ID":
+        if self.config.GOAL_SPEC == "CATEGORY_LABEL_TEXT":
+            if len(episode.goals) == 0:
+                logger.error(
+                    f"No goal specified for episode {episode.episode_id}."
+                )
+                return None
+            curr_goal_ind = (kwargs["task"].current_goal_index
+                             if kwargs["task"].current_goal_index < len(episode.goals) else -1)
+            if curr_goal_ind != -1 and 'action' in kwargs and kwargs['action']['action'] == 'FOUND':
+                curr_goal_ind += 1
+            if curr_goal_ind == len(episode.goals):
+                curr_goal_ind = -1
+            category_label = episode.goals[curr_goal_ind].language_instruction
+            tokens = clip.tokenize(category_label, context_length=77).numpy()
+            return tokens
+            # return np.array([category_label])
+        elif self.config.GOAL_SPEC == "TASK_CATEGORY_ID":
             if len(episode.goals) == 0:
                 logger.error(
                     f"No goal specified for episode {episode.episode_id}."
@@ -187,99 +236,24 @@ class MultiObjectGoalSensor(Sensor):
                 return None
             category_name = [i.object_category for i in episode.goals]
             goalArray = np.array(
-                [self._dataset.category_to_task_category_id[i] for i in category_name],
+                [self._dataset.category_to_task_category_id[i] + 1 for i in category_name],
                 dtype=np.int64,
             )
-            return goalArray[kwargs["task"].current_goal_index:kwargs["task"].current_goal_index+1]
-        elif self.config.GOAL_SPEC == "OBJECT_ID":
+            return goalArray[kwargs["task"].current_goal_index:kwargs["task"].current_goal_index + 1]
+        elif self.config.goal_spec == "OBJECT_ID":
             return np.array([episode.goals[0].object_name_id], dtype=np.int64)
         else:
             raise RuntimeError(
-                "Wrong GOAL_SPEC specified for ObjectGoalSensor."
+                "Wrong goal_spec specified for ObjectGoalSensor."
             )
-
 
 @registry.register_task(name="MultiObjectNav-v1")
 class MultiObjectNavigationTask(NavigationTask):
-    r"""An Object Navigation Task class for a task specific methods.
-        Used to explicitly state a type of the task in config.
+    r"""Multi-Object Navigation Task class for a task specific methods.
+    Used to explicitly state a type of the task in config.
     """
     def __init__(
-        self, config: Config, sim: Simulator, dataset: Optional[Dataset] = None
+        self, config, sim, dataset
     ) -> None:
         super().__init__(config=config, sim=sim, dataset=dataset)
         self.current_goal_index=0
-        self.object_to_datset_mapping = dataset.category_to_task_category_id
-
-
-    def reset(self, episode: MultiObjectGoalNavEpisode):
-        rigid_obj_mgr = self._sim.get_rigid_object_manager()
-
-        # Remove existing objects from last episode
-        rigid_obj_mgr.remove_all_objects()
-
-        # Insert current episode objects
-        obj_path = self._config.OBJECTS_PATH
-
-        obj_templates_mgr = self._sim.get_object_template_manager()
-        obj_templates_mgr.load_configs(obj_path, True)
-
-        for i in range(len(episode.goals)):
-            current_goal = episode.goals[i].object_category
-            object_id = episode.goals[i].object_id
-            dataset_index = self.object_to_datset_mapping[current_goal]
-
-            # obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
-            obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
-            object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
-            obj_node = object_box.root_scene_node
-            obj_bb = obj_node.cumulative_bb
-            jj = obj_bb.back_bottom_left
-            jj = [jj[0], jj[2], jj[1]]
-            diff = np.array(episode.goals[i].position)
-            diff2 = diff - jj
-            diff2[2] += jj[2] * 2
-            diff2[1] += 0.05
-            object_box.semantic_id = dataset_index
-            object_box.translation = np.array(diff2)
-            object_box.rotate_x(magnum.Rad(-1.5708))
-
-        if self._config.INCLUDE_DISTRACTORS:
-            for i in range(len(episode.distractors)):
-                current_distractor = episode.distractors[i].object_category
-                object_id = episode.distractors[i].object_id
-
-                dataset_index = self.object_to_datset_mapping[current_distractor]
-
-                obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
-                object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
-                obj_node = object_box.root_scene_node
-                obj_bb = obj_node.cumulative_bb
-                jj = obj_bb.back_bottom_left
-                jj = [jj[0], jj[2], jj[1]]
-                diff = np.array(episode.distractors[i].position)
-                diff2 = diff - jj
-                diff2[2] += jj[2] * 2
-                diff2[1] += 0.05
-                object_box.semantic_id = dataset_index
-                object_box.translation = np.array(diff2)
-                object_box.rotate_x(magnum.Rad(-1.5708))
-
-        # Reinitialize current goal index
-        self.current_goal_index = 0
-
-        # Initialize self.is_found_called
-        self.is_found_called = False
-
-        observations = self._sim.reset()
-        observations.update(
-            self.sensor_suite.get_observations(
-                observations=observations, episode=episode, task=self
-            )
-        )
-
-        for action_instance in self.actions.values():
-            action_instance.reset(episode=episode, task=self)
-
-        return observations
-

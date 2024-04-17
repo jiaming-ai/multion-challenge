@@ -1,25 +1,24 @@
-# MultiON Challenge 2023
+# MultiON Challenge 2024
 
-This repository contains submission guidelines and starter code for the MultiON Challenge 2023. For challenge overview, check [challenge webpage](http://multion-challenge.cs.sfu.ca). To participate, visit EvalAI challenge [page](https://eval.ai/web/challenges/challenge-page/2002/overview).
+This repository contains submission guidelines and starter code for the MultiON Challenge 2024. For challenge overview, check [challenge webpage](http://multion-challenge.cs.sfu.ca). To participate, visit EvalAI challenge [page](https://eval.ai/web/challenges/challenge-page/2276/overview).
 
 To receive challenge updates, please join our Google Group email list: [click here](https://groups.google.com/g/multion-challenge-2023) to join or send an email to [multion-challenge-2023+subscribe@googlegroups.com](mailto:multion-challenge-2023+subscribe@googlegroups.com).
 
-## Task
+## Task 
 
-In MultiON, an agent is tasked with navigating to a sequence of objects. These objects are flexibly inserted into a realistic 3D environment. The task is based on the [AI Habitat](https://aihabitat.org/) and [Habitat-Matterport 3D Semantics (HM3D-Semantics)](https://aihabitat.org/datasets/hm3d-semantics/) scenes. 
+In MultiON, an agent is tasked with navigating to a sequence of objects. These objects are placed into a realistic 3D environment. The task is based on the [AI Habitat](https://aihabitat.org/) and [Habitat Synthetic Scenes Dataset (HSSD)](https://3dlg-hcvc.github.io/hssd/) scenes.
+                
+Each episode contains 3 target objects randomly sampled from the objects present in the scene. Unlike previous challenges, this time the objects are described by a language instruction such as ‘Find the mantel clock on the chest of drawers’ instead of an object category. Moreover, the set of goal objects is not known apriori, making it closer to a real-world setting where the agent might be asked to ‘any’ object in the environment.
+Each language instruction may contain a coarse description of the object (‘Go to the candle’) or a fine-grained description (‘Find the mini spa candle’). In the case of the former, there might exist multiple valid goal objects and navigating to any of them is considered successful. Instructions may also contain spatial relations between objects such as ‘Find the red short pillar candle on the grey nightstand’.
 
-Each episode contains 3 target objects randomly sampled from a set of 50 classes. For every class there are multiple objects available (e.g., for the "notebook" class there are 9 different objects). We did this to add instance-level variation within each category and test the perception capabilities of the agents. We used 3D objects from ShapeNet. Additionally:
-- The training set contains only 40 possible classes, the validation 45 (with 5 "zero-shot objects"), and the test/test challenge have 45 (with 5 "zero-shot objects", different from the validation ones).
-- Each episode contains 5 distractor (non-target) objects randomly scattered on surfaces around the environment, to increase the difficulty of the task.
-
-In summary, in each episode, the agent is initialized at a random starting position and orientation in an unseen environment and provided a sequence of 3 target objects randomly sampled (without replacement) from the set of 50 objects. The agent must navigate to each target object in the sequence (in the given order), avoiding distractor objects and and call the FOUND action to indicate discovery. The agent has access to an RGB-D camera and a noiseless GPS+Compass sensor. GPS+Compass sensor provides the agent's current location and orientation information relative to the start of the episode.
+In summary, in each episode, the agent is initialized at a random starting position and orientation in an unseen environment and provided a sequence of 3 target objects. The agent must navigate to each target object in the sequence (in the given order) and call the FOUND action to indicate discovery. The agent has access to an RGB-D camera and a noiseless GPS+Compass sensor. GPS+Compass sensor provides the agent's current location and orientation information relative to the start of the episode.
 
 ## Dataset
-We use [Habitat-Matterport 3D Semantics (HM3D-Semantics)](https://aihabitat.org/datasets/hm3d-semantics/) for the challenge. Each episode contains 3 sequential targets and some distractor objects.
+We use [Habitat Synthetic Scenes Dataset (HSSD)](https://3dlg-hcvc.github.io/hssd/) for the challenge. Each episode contains 3 sequential targets described by natural language instructions.
 
 ## Evaluation
 
-The episode terminates when an agent discovers all objects in the sequence of the current episode or when it calls an incorrect FOUND action. A FOUND action is incorrect if it is called when the agent is not within a 1.5m from its current target object. Note that this does not require the agent to be viewing the object at the time of calling FOUND. After the episode terminates, the agent is evaluated using the Progress and PPL metrics that are defined below.  
+The episode terminates when an agent discovers all objects in the sequence of the current episode or when it calls an incorrect FOUND action. A FOUND action is incorrect if it is called when the agent is not within 1.5m from its current target object. Note that this does not require the agent to be viewing the object at the time of calling FOUND. After the episode terminates, the agent is evaluated using the Progress and PPL metrics that are defined below.  
 **Progress**: Fraction of object goals that are successfully FOUND. This effectively measures if the agent was able to navigate to goals.  
 **PPL**: Overall path length weighted by progress. This effectively measures the path efficiency of the agent. Formally, 
 
@@ -27,7 +26,7 @@ The episode terminates when an agent discovers all objects in the sequence of th
 
 ## Submission Guidelines 
 
-To participate in the challenge, visit our [EvalAI](https://eval.ai/web/challenges/challenge-page/2002/overview) page. Participants need to upload docker containers with their agents using EvalAI. Before making your submission, you should run your container locally on the minival data split to ensure the performance metrics match with those of remote evaluation. We provide a base docker image and participants only need to edit `evaluate.py` file which implements the navigation agent. Instructions for building your docker container are provided below.
+To participate in the challenge, visit our [EvalAI](https://eval.ai/web/challenges/challenge-page/2276/overview) page. Participants need to upload docker containers with their agents using EvalAI. Before making your submission, you should run your container locally on the minival data split to ensure the performance metrics match with those of remote evaluation. We provide a base docker image and participants only need to edit `evaluate.py` file which implements the navigation agent. Instructions for building your docker container are provided below.
 
 
 1. Install [nvidia-docker v2](https://github.com/NVIDIA/nvidia-docker) by following instructions given [here](https://github.com/nvidia/nvidia-docker/wiki/Installation-(version-2.0)).
@@ -47,15 +46,9 @@ cd multion-challenge
 docker build -f Dockerfile -t multi_on:latest .
 ```
 
-Note that we use `configs/multinav.yaml` as the configuration file. We use v0.2.2 for both [habitat-sim](https://github.com/facebookresearch/habitat-sim) and [habitat-lab](https://github.com/facebookresearch/habitat-lab).
+Note that we use `configs/multinav.yaml` as the configuration file. We use v0.2.5 for both [habitat-sim](https://github.com/facebookresearch/habitat-sim) and [habitat-lab](https://github.com/facebookresearch/habitat-lab).
 
-6. Download scenes [Habitat-Matterport 3D Semantics (HM3D-Semantics)](https://aihabitat.org/datasets/hm3d-semantics/) and place the data in: `multion-challenge/data/scene_datasets/hm3d`. 
-
-Download the objects:
-```
-wget -O objects.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2023/challenge/objects.zip"
-wget -O default.phys_scene_config.json "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2023/challenge/default.phys_scene_config.json"
-```
+6. Download scenes [Habitat Synthetic Scenes Dataset (HSSD)](https://3dlg-hcvc.github.io/hssd/) and place the data in: `multion-challenge/data/scene_datasets/hm3d`. 
 
 Extract them under `multion-challenge/data`.
 
@@ -71,11 +64,9 @@ Extract them and place them inside `multion-challenge/data` in the following for
 multion-challenge/
   data/
     scene_datasets/
-      hm3d/
+      fphab/
+          scenes/
           ...
-    default.phys_scene_config.json
-    objects/
-        ...
     datasets/
         3_ON/
             train/
@@ -106,7 +97,7 @@ You should see an output like this:
 Progress: 0.0
 PPL: 0.0
 Success: 0.0
-SPL: 0.0
+MSPL: 0.0
 ```
 
 8. Install EvalAI and submit your docker image. See detailed instructions [here](https://cli.eval.ai/).
@@ -123,7 +114,7 @@ evalai push multi_on:latest --phase <phase-name>
 ```
 
 
-## Citing MultiON Challenge 2023
+## Citing MultiON Challenge 2024
 If you use the multiON framework, please consider citing the following [paper](https://arxiv.org/pdf/2012.03912.pdf):
 ```
 @inproceedings{wani2020multion,

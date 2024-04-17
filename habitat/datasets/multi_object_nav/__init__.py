@@ -18,7 +18,7 @@ from habitat.core.registry import registry
 def _try_register_multinavdatasetv1():
     try:
         from habitat.datasets.multi_object_nav.multi_object_nav_dataset import (
-            MultiObjectNavDatasetV1,
+            LangMultiObjectNavDatasetV1,
         )
 
         has_pointnav = True
@@ -28,7 +28,7 @@ def _try_register_multinavdatasetv1():
 
     if has_pointnav:
         from habitat.datasets.multi_object_nav.multi_object_nav_dataset import (
-            MultiObjectNavDatasetV1,
+            LangMultiObjectNavDatasetV1,
         )
     else:
 

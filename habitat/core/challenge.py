@@ -23,5 +23,5 @@ class Challenge(Benchmark):
         print("Progress:", metrics["progress"])
         print("PPL:", metrics["ppl"])
         print("Success:", metrics["success"])
-        print("SPL:", metrics["spl"])
+        print("MSPL:", metrics["mspl"])
 

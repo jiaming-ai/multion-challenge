@@ -21,6 +21,7 @@ from habitat.core.embodied_task import EmbodiedTask, Metrics
 from habitat.core.simulator import Observations, Simulator
 from habitat.datasets import make_dataset
 from habitat.sims import make_sim
+from habitat_sim.nav import NavMeshSettings
 from habitat.tasks import make_task
 from habitat.utils import profiling_wrapper
 import habitat_sim
@@ -116,6 +117,11 @@ class Env:
         self._sim = make_sim(
             id_sim=self._config.SIMULATOR.TYPE, config=self._config.SIMULATOR
         )
+        setting = NavMeshSettings()
+        setting.agent_radius = 0.18
+        setting.agent_height = 0.88
+        setting.include_static_objects = True
+        self._sim.recompute_navmesh(self._sim.pathfinder, setting)
         self._task = make_task(
             self._config.TASK.TYPE,
             config=self._config.TASK,
@@ -257,46 +263,25 @@ class Env:
         obj_templates_mgr = self._sim.get_object_template_manager()
         obj_templates_mgr.load_configs(obj_path, True)
 
-        for i in range(len(self.current_episode.goals)):
-            current_goal = self.current_episode.goals[i].object_category
-            object_id = self.current_episode.goals[i].object_id
-            dataset_index = self.object_to_datset_mapping[current_goal]
+        #for i in range(len(self.current_episode.goals)):
+         #   current_goal = self.current_episode.goals[i].object_category
+          #  object_id = self.current_episode.goals[i].object_id
+           # dataset_index = self.object_to_datset_mapping[current_goal]
 
-            # obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
-            obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
-            object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
-            obj_node = object_box.root_scene_node
-            obj_bb = obj_node.cumulative_bb
-            jj = obj_bb.back_bottom_left
-            jj = [jj[0], jj[2], jj[1]]
-            diff = np.array(self.current_episode.goals[i].position)
-            diff2 = diff - jj
-            diff2[2] += jj[2] * 2
-            diff2[1] += 0.05
-            object_box.semantic_id = dataset_index
-            object_box.translation = np.array(diff2)
-            object_box.rotate_x(magnum.Rad(-1.5708))
-
-        if self._config.TASK.INCLUDE_DISTRACTORS:
-            for i in range(len(self.current_episode.distractors)):
-                current_distractor = self.current_episode.distractors[i].object_category
-                object_id = self.current_episode.distractors[i].object_id
-
-                dataset_index = self.object_to_datset_mapping[current_distractor]
-
-                obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
-                object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
-                obj_node = object_box.root_scene_node
-                obj_bb = obj_node.cumulative_bb
-                jj = obj_bb.back_bottom_left
-                jj = [jj[0], jj[2], jj[1]]
-                diff = np.array(self.current_episode.distractors[i].position)
-                diff2 = diff - jj
-                diff2[2] += jj[2] * 2
-                diff2[1] += 0.05
-                object_box.semantic_id = dataset_index
-                object_box.translation = np.array(diff2)
-                object_box.rotate_x(magnum.Rad(-1.5708))
+            ## obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
+            #obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
+            #object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
+            #obj_node = object_box.root_scene_node
+            #obj_bb = obj_node.cumulative_bb
+            #jj = obj_bb.back_bottom_left
+            #jj = [jj[0], jj[2], jj[1]]
+            #diff = np.array(self.current_episode.goals[i].position)
+            #diff2 = diff - jj
+            #diff2[2] += jj[2] * 2
+            #diff2[1] += 0.05
+            #object_box.semantic_id = dataset_index
+            #object_box.translation = np.array(diff2)
+            #object_box.rotate_x(magnum.Rad(-1.5708))
 
         '''
         # Remove existing objects from last episode
@@ -396,17 +381,41 @@ class Env:
             observations=observations,
         )
             
-        ##Terminates episode if wrong found is called
-        if self.task.is_found_called == True and \
-            self.task.measurements.measures[
-            "sub_success"
-        ].get_metric() == 0:
+        if self.task.is_found_called == True:
+            if self.task.measurements.measures[
+                "sub_success"
+            ].get_metric() == 0:
+                ##Terminates episode if wrong found is called
+                self.task._is_episode_active = False
+                self._env._episode_over = True
+            elif self.task.current_goal_index == len(self._env.current_episode.goals):
+                ##Terminates episode if all goals are found
+                self.task._is_episode_active = False
+                self._env._episode_over = True
+            elif self.task.measurements.measures[
+                    "sub_success"
+                ].get_metric() == 1 and \
+                    self.task.current_goal_index < len(self._env.current_episode.goals):
+                # Update observations for all sensors once a sub-goal is reached
+                # observations.update(
+                #     self.task.sensor_suite.get_observations(
+                #         observations=observations,
+                #         episode=self._env.current_episode,
+                #         action=action,
+                #         task=self.task,
+                #     )
+                # )
+                self.task._is_episode_active = True
+                self._env._episode_over = False
+            else:
+                self.task._is_episode_active = True
+                self._env._episode_over = False
+
+        if not self.task._is_episode_active:
+            self._episode_over = True
+        if self.get_metrics()['mspl']:
             self.task._is_episode_active = False
-        
-        ##Terminates episode if all goals are found
-        if self.task.is_found_called == True and \
-            self.task.current_goal_index == len(self.current_episode.goals):
-            self.task._is_episode_active = False
+            self._episode_over = True
             
         self._update_step_stats()
 

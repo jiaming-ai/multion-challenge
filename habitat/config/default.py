@@ -112,7 +112,7 @@ _C.TASK.OBJECTGOAL_SENSOR.GOAL_SPEC_MAX_VAL = 50
 # -----------------------------------------------------------------------------
 _C.TASK.MULTI_OBJECT_GOAL_SENSOR = CN()
 _C.TASK.MULTI_OBJECT_GOAL_SENSOR.TYPE = "MultiObjectGoalSensor"
-_C.TASK.MULTI_OBJECT_GOAL_SENSOR.GOAL_SPEC = "TASK_CATEGORY_ID"
+_C.TASK.MULTI_OBJECT_GOAL_SENSOR.GOAL_SPEC = "CATEGORY_LABEL_TEXT"
 _C.TASK.MULTI_OBJECT_GOAL_SENSOR.GOAL_SPEC_MAX_VAL = 50
 # -----------------------------------------------------------------------------
 # IMAGEGOAL SENSOR
@@ -243,7 +243,7 @@ _C.TASK.ACTIONS.FOUND.TYPE = "FoundObjectAction"
 # -----------------------------------------------------------------------------
 _C.TASK.DISTANCE_TO_MULTI_GOAL = CN()
 _C.TASK.DISTANCE_TO_MULTI_GOAL.TYPE = "DistanceToMultiGoal"
-_C.TASK.DISTANCE_TO_MULTI_GOAL.DISTANCE_TO = "VIEW_POINTS"
+_C.TASK.DISTANCE_TO_MULTI_GOAL.DISTANCE_TO = "POINT" #"VIEW_POINTS"
 # -----------------------------------------------------------------------------
 # # EPISODE_LENGTH MEASUREMENT
 # -----------------------------------------------------------------------------
@@ -263,7 +263,7 @@ _C.TASK.RAW_METRICS.TYPE = "RawMetrics"
 # -----------------------------------------------------------------------------
 _C.TASK.DISTANCE_TO_CURR_GOAL = CN()
 _C.TASK.DISTANCE_TO_CURR_GOAL.TYPE = "DistanceToCurrGoal"
-_C.TASK.DISTANCE_TO_CURR_GOAL.DISTANCE_TO = "VIEW_POINTS"
+_C.TASK.DISTANCE_TO_CURR_GOAL.DISTANCE_TO = "POINT" #"VIEW_POINTS"
 # -----------------------------------------------------------------------------
 # # SUB_SUCCESS MEASUREMENT
 # -----------------------------------------------------------------------------
@@ -558,3 +558,40 @@ def get_config(
 
     config.freeze()
     return config
+    
+import inspect
+import os.path as osp
+_HABITAT_CFG_DIR = osp.dirname(inspect.getabsfile(inspect.currentframe()))
+# Habitat config directory inside the installed package.
+# Used to access default predefined configs.
+# This is equivalent to doing osp.dirname(osp.abspath(__file__))
+# in editable install, this is pwd/habitat-lab/habitat/config
+CONFIG_FILE_SEPARATOR = ","
+
+
+def get_full_config_path(config_path: str, configs_dir: str) -> str:
+    r"""Returns absolute path to the yaml config file if exists, else raises RuntimeError.
+
+    :param config_path: path to the yaml config file.
+    :param configs_dir: path to the config files root directory.
+    :return: absolute path to the yaml config file.
+    """
+    if osp.exists(config_path):
+        return osp.abspath(config_path)
+
+    proposed_full_path = osp.join(configs_dir, config_path)
+    if osp.exists(proposed_full_path):
+        return osp.abspath(proposed_full_path)
+
+    raise RuntimeError(f"No file found for config '{config_path}'")
+
+from functools import partial
+get_full_habitat_config_path = partial(
+    get_full_config_path, configs_dir=_HABITAT_CFG_DIR
+)
+get_full_habitat_config_path.__doc__ = r"""
+Returns absolute path to the habitat yaml config file if exists, else raises RuntimeError.
+
+:param config_path: relative path to the habitat yaml config file.
+:return: absolute config to the habitat yaml config file.
+"""

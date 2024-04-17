@@ -3,7 +3,7 @@ ENVIRONMENT:
 SIMULATOR:
   TURN_ANGLE: 30
   TILT_ANGLE: 30
-  ACTION_SPACE_CONFIG: "v1"
+  ACTION_SPACE_CONFIG: "v0"
   AGENT_0:
     SENSORS: ['RGB_SENSOR', 'DEPTH_SENSOR']
     HEIGHT: 0.88
@@ -36,14 +36,14 @@ TASK:
 
   SUCCESS_DISTANCE: 1.0
 
-  SENSORS: ['MULTI_OBJECT_GOAL_SENSOR', 'COMPASS_SENSOR', 'GPS_SENSOR']
+  SENSORS: ['MULTI_OBJECT_GOAL_SENSOR']
 
   GOAL_SENSOR_UUID: multiobjectgoal
 
   MEASUREMENTS: [
     'EPISODE_LENGTH',
     'DISTANCE_TO_CURR_GOAL', 
-    'DISTANCE_TO_MULTI_GOAL', 
+    #'DISTANCE_TO_MULTI_GOAL',
     'SUB_SUCCESS', 
     'SUCCESS', 
     'MSPL', 
@@ -63,5 +63,5 @@ TASK:
 DATASET:
   TYPE: MultiObjectNav-v1
   SPLIT: minival
-  SCENES_DIR: "data/scene_datasets/"
+  SCENES_DIR: "data/scene_datasets/fphab/scenes"
   DATA_PATH: "data/datasets/3_ON/{split}/{split}.json.gz"
