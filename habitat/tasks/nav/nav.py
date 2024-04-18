@@ -1544,15 +1544,15 @@ class DistanceToMultiGoal(Measure):
         if self._config.DISTANCE_TO == "POINT":
             if task.current_goal_index >= len(episode.goals):
                 distance_to_target = self._sim.geodesic_distance(
-                    current_position, episode.goals[-1].position
+                    current_position, episode.goals[-1].position[0]
                 )
             else:
                 distance_to_target = self._sim.geodesic_distance(
-                    current_position, episode.goals[task.current_goal_index].position
+                    current_position, [go.centroid for go in episode.goals[task.current_goal_index].goal_object]
                 )
             for goal_number in range(task.current_goal_index, len(episode.goals)-1):
                 distance_to_target += self._sim.geodesic_distance(
-                    episode.goals[goal_number].position, episode.goals[goal_number+1].position
+                    episode.goals[goal_number].position[0], episode.goals[goal_number+1].position[0]
                 )
         elif self._config.DISTANCE_TO == "VIEW_POINTS":
             if task.current_goal_index >= len(episode.goals):
@@ -1811,6 +1811,12 @@ class DistanceToCurrGoal(Measure):
             # distance_to_subgoal = self._sim.geodesic_distance(
             #     current_position, self._subgoal_view_points
             # )
+            # ep_ln = task.measurements.measures[
+            #     EpisodeLength.cls_uuid
+            # ].get_metric()
+            # if ('BAbdmeyTvMZ.basis.glb_1' in os.path.basename(episode.scene_id) + '_' + episode.episode_id
+            #         and ep_ln >= 1390):
+            #     print('Here.')
             distances = []
             goal_coord = episode.goals[task.current_goal_index].position
             goal_coord2D = [goal_coord[0], goal_coord[2]]

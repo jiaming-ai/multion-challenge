@@ -1,36 +1,47 @@
 #!/usr/bin/env python3
 
-# Copyright (c) Facebook, Inc. and its affiliates.
+# Copyright (c) Meta Platforms, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import attr
+import numpy as np
 
 import habitat_sim.utils.datasets_download as data_downloader
-from habitat.config import Config
-from habitat.core.dataset import Episode
+from habitat.core.dataset import Episode, Dataset
 from habitat.core.logging import logger
 from habitat.core.registry import registry
 from habitat.core.utils import DatasetFloatJSONEncoder
-from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
+#from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
 from habitat.datasets.utils import check_and_gen_physics_config
 
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
+
+class PointNavDatasetV1(Dataset):
+    pass
 
 @attr.s(auto_attribs=True, kw_only=True)
 class RearrangeEpisode(Episode):
-    art_objs: List[List[Any]]
-    static_objs: List[List[Any]]
-    targets: List[List[Any]]
-    fixed_base: bool
-    art_states: List[Any]
-    nav_mesh_path: str
-    scene_config_path: str
-    allowed_region: List[Any] = []
+    r"""Specifies additional objects, targets, markers, and ArticulatedObject states for a particular instance of an object rearrangement task.
+
+    :property ao_states: Lists modified ArticulatedObject states for the scene: {instance_handle -> {link, state}}
+    :property rigid_objs: A list of objects to add to the scene, each with: (handle, transform)
+    :property targets: Maps an object instance to a new target location for placement in the task. {instance_name -> target_transform}
+    :property markers: Indicate points of interest in the scene such as grasp points like handles. {marker name -> (type, (params))}
+    :property target_receptacles: The names and link indices of the receptacles containing the target objects.
+    :property goal_receptacles: The names and link indices of the receptacles containing the goals.
+    """
+    ao_states: Dict[str, Dict[int, float]]
+    rigid_objs: List[Tuple[str, np.ndarray]]
+    targets: Dict[str, np.ndarray]
     markers: List[Dict[str, Any]] = []
-    force_spawn_pos: List = None
+    target_receptacles: List[Tuple[str, int]] = []
+    goal_receptacles: List[Tuple[str, int]] = []
+    name_to_receptacle: Dict[str, str] = {}
 
 
 @registry.register_dataset(name="RearrangeDataset-v0")
@@ -43,7 +54,7 @@ class RearrangeDatasetV0(PointNavDatasetV1):
         result = DatasetFloatJSONEncoder().encode(self)
         return result
 
-    def __init__(self, config: Optional[Config] = None) -> None:
+    def __init__(self, config: Optional["DictConfig"] = None) -> None:
         self.config = config
 
         if config and not self.check_config_paths_exist(config):
@@ -51,7 +62,12 @@ class RearrangeDatasetV0(PointNavDatasetV1):
                 "Rearrange task assets are not downloaded locally, downloading and extracting now..."
             )
             data_downloader.main(
-                ["--uids", "rearrange_task_assets", "--no-replace"]
+                [
+                    "--uids",
+                    "rearrange_task_assets",
+                    "--no-replace",
+                    "--no-prune",
+                ]
             )
             logger.info("Downloaded and extracted the data.")
 
@@ -68,13 +84,4 @@ class RearrangeDatasetV0(PointNavDatasetV1):
             rearrangement_episode = RearrangeEpisode(**episode)
             rearrangement_episode.episode_id = str(i)
 
-            #  Converting path data/scene_datasets/{scene}_\d\d.glb into new format
-            if "replica_cad" not in rearrangement_episode.scene_id:
-                rearrangement_episode.scene_id = (
-                    rearrangement_episode.scene_id.replace(".glb", "").replace(
-                        "data/scene_datasets/",
-                        "data/replica_cad/stages/Stage_",
-                    )[:-3]
-                    + ".glb"
-                )
             self.episodes.append(rearrangement_episode)

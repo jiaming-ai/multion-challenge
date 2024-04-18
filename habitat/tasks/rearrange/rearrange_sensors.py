@@ -4,6 +4,9 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+
+from collections import defaultdict, deque
+
 import numpy as np
 from gym import spaces
 
@@ -12,40 +15,30 @@ from habitat.core.registry import registry
 from habitat.core.simulator import Sensor, SensorTypes
 from habitat.tasks.nav.nav import PointGoalSensor
 from habitat.tasks.rearrange.rearrange_sim import RearrangeSim
-from habitat.tasks.rearrange.utils import CollisionDetails
-from habitat.tasks.utils import get_angle
-
-
-@registry.register_sensor
-class TargetPointGoalGPSAndCompassSensor(PointGoalSensor):
-    cls_uuid: str = "target_point_goal_gps_and_compass_sensor"
-
-    def __init__(self, *args, task, **kwargs):
-        self._sim: RearrangeSim
-        self._task = task
-        super().__init__(*args, task=task, **kwargs)
-
-    def get_observation(self, observations, episode, *args, **kwargs):
-        agent_state = self._sim.get_agent_state()
-        agent_position = agent_state.position
-        rotation_world_agent = agent_state.rotation
-
-        target_position = self._sim.get_target_objs_start()[0]
-        return self._compute_pointgoal(
-            agent_position, rotation_world_agent, target_position
-        )
+from habitat.tasks.rearrange.utils import (
+    CollisionDetails,
+    UsesArticulatedAgentInterface,
+    batch_transform_point,
+    get_angle_to_pos,
+    rearrange_logger,
+)
+from habitat.tasks.utils import cartesian_to_polar
 
 
 class MultiObjSensor(PointGoalSensor):
+    """
+    Abstract parent class for a sensor that specifies the locations of all targets.
+    """
+
     def __init__(self, *args, task, **kwargs):
         self._task = task
         self._sim: RearrangeSim
-        super(MultiObjSensor, self).__init__(*args, task=task, **kwargs)
+        super().__init__(*args, task=task, **kwargs)
 
     def _get_observation_space(self, *args, **kwargs):
         n_targets = self._task.get_n_targets()
         return spaces.Box(
-            shape=(n_targets, 3),
+            shape=(n_targets * 3,),
             low=np.finfo(np.float32).min,
             high=np.finfo(np.float32).max,
             dtype=np.float32,
@@ -53,33 +46,28 @@ class MultiObjSensor(PointGoalSensor):
 
 
 @registry.register_sensor
-class AbsObjectGoalPositionSensor(MultiObjSensor):
+class TargetCurrentSensor(UsesArticulatedAgentInterface, MultiObjSensor):
     """
-    This is the ground truth object position sensor relative to the scene coordinate frame.
-    """
-
-    cls_uuid: str = "abs_obj_goal_pos_sensor"
-
-    def get_observation(self, observations, episode, *args, **kwargs):
-        self._sim: RearrangeSim
-        idxs, _ = self._sim.get_targets()
-        scene_pos = self._sim.get_scene_pos()
-        pos = scene_pos[idxs]
-
-        return pos
-
-
-@registry.register_sensor
-class ObjectGoalPositionSensor(MultiObjSensor):
-    """
-    This is the ground truth object position sensor relative to the robot coordinate frame.
+    This is the ground truth object position sensor relative to the robot end-effector coordinate frame.
     """
 
     cls_uuid: str = "obj_goal_pos_sensor"
 
+    def _get_observation_space(self, *args, **kwargs):
+        return spaces.Box(
+            shape=(3,),
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max,
+            dtype=np.float32,
+        )
+
     def get_observation(self, observations, episode, *args, **kwargs):
         self._sim: RearrangeSim
-        T_inv = self._sim.robot.ee_transform.inverted()
+        T_inv = (
+            self._sim.get_agent_data(self.agent_id)
+            .articulated_agent.ee_transform()
+            .inverted()
+        )
 
         idxs, _ = self._sim.get_targets()
         scene_pos = self._sim.get_scene_pos()
@@ -88,11 +76,11 @@ class ObjectGoalPositionSensor(MultiObjSensor):
         for i in range(pos.shape[0]):
             pos[i] = T_inv.transform_point(pos[i])
 
-        return pos[self._task.targ_idx]
+        return pos.reshape(-1)
 
 
 @registry.register_sensor
-class TargetStartSensor(MultiObjSensor):
+class TargetStartSensor(UsesArticulatedAgentInterface, MultiObjSensor):
     """
     Relative position from end effector to target object
     """
@@ -101,13 +89,74 @@ class TargetStartSensor(MultiObjSensor):
 
     def get_observation(self, *args, observations, episode, **kwargs):
         self._sim: RearrangeSim
-        global_T = self._sim.robot.ee_transform
+        global_T = self._sim.get_agent_data(
+            self.agent_id
+        ).articulated_agent.ee_transform()
         T_inv = global_T.inverted()
         pos = self._sim.get_target_objs_start()
-        for i in range(pos.shape[0]):
-            pos[i] = T_inv.transform_point(pos[i])
+        return batch_transform_point(pos, T_inv, np.float32).reshape(-1)
 
-        return pos[self._task.targ_idx]
+
+class PositionGpsCompassSensor(UsesArticulatedAgentInterface, Sensor):
+    def __init__(self, *args, sim, task, **kwargs):
+        self._task = task
+        self._sim = sim
+        super().__init__(*args, task=task, **kwargs)
+
+    def _get_sensor_type(self, *args, **kwargs):
+        return SensorTypes.TENSOR
+
+    def _get_observation_space(self, *args, config, **kwargs):
+        n_targets = self._task.get_n_targets()
+        self._polar_pos = np.zeros(n_targets * 2, dtype=np.float32)
+        return spaces.Box(
+            shape=(n_targets * 2,),
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max,
+            dtype=np.float32,
+        )
+
+    def _get_positions(self) -> np.ndarray:
+        raise NotImplementedError("Must override _get_positions")
+
+    def get_observation(self, task, *args, **kwargs):
+        pos = self._get_positions()
+        articulated_agent_T = self._sim.get_agent_data(
+            self.agent_id
+        ).articulated_agent.base_transformation
+
+        rel_pos = batch_transform_point(
+            pos, articulated_agent_T.inverted(), np.float32
+        )
+
+        for i, rel_obj_pos in enumerate(rel_pos):
+            rho, phi = cartesian_to_polar(rel_obj_pos[0], rel_obj_pos[1])
+            self._polar_pos[(i * 2) : (i * 2) + 2] = [rho, -phi]
+
+        return self._polar_pos
+
+
+@registry.register_sensor
+class TargetStartGpsCompassSensor(PositionGpsCompassSensor):
+    cls_uuid: str = "obj_start_gps_compass"
+
+    def _get_uuid(self, *args, **kwargs):
+        return TargetStartGpsCompassSensor.cls_uuid
+
+    def _get_positions(self) -> np.ndarray:
+        return self._sim.get_target_objs_start()
+
+
+@registry.register_sensor
+class TargetGoalGpsCompassSensor(PositionGpsCompassSensor):
+    cls_uuid: str = "obj_goal_gps_compass"
+
+    def _get_uuid(self, *args, **kwargs):
+        return TargetGoalGpsCompassSensor.cls_uuid
+
+    def _get_positions(self) -> np.ndarray:
+        _, pos = self._sim.get_targets()
+        return pos
 
 
 @registry.register_sensor
@@ -118,22 +167,13 @@ class AbsTargetStartSensor(MultiObjSensor):
 
     cls_uuid: str = "abs_obj_start_sensor"
 
-    def _get_observation_space(self, *args, **kwargs):
-        n_targets = self._task.get_n_targets()
-        return spaces.Box(
-            shape=(n_targets, 3),
-            low=np.finfo(np.float32).min,
-            high=np.finfo(np.float32).max,
-            dtype=np.float32,
-        )
-
     def get_observation(self, observations, episode, *args, **kwargs):
         pos = self._sim.get_target_objs_start()
-        return pos
+        return pos.reshape(-1)
 
 
 @registry.register_sensor
-class GoalSensor(MultiObjSensor):
+class GoalSensor(UsesArticulatedAgentInterface, MultiObjSensor):
     """
     Relative to the end effector
     """
@@ -141,13 +181,13 @@ class GoalSensor(MultiObjSensor):
     cls_uuid: str = "obj_goal_sensor"
 
     def get_observation(self, observations, episode, *args, **kwargs):
-        global_T = self._sim.robot.ee_transform
+        global_T = self._sim.get_agent_data(
+            self.agent_id
+        ).articulated_agent.ee_transform()
         T_inv = global_T.inverted()
 
         _, pos = self._sim.get_targets()
-        for i in range(pos.shape[0]):
-            pos[i] = T_inv.transform_point(pos[i])
-        return pos
+        return batch_transform_point(pos, T_inv, np.float32).reshape(-1)
 
 
 @registry.register_sensor
@@ -156,45 +196,11 @@ class AbsGoalSensor(MultiObjSensor):
 
     def get_observation(self, *args, observations, episode, **kwargs):
         _, pos = self._sim.get_targets()
-        return pos
+        return pos.reshape(-1)
 
 
 @registry.register_sensor
-class LocalizationSensor(Sensor):
-    def __init__(self, *args, sim, config, **kwargs):
-        super().__init__(config=config)
-        self._sim = sim
-
-    def _get_uuid(self, *args, **kwargs):
-        return "localization"
-
-    def _get_sensor_type(self, *args, **kwargs):
-        return SensorTypes.TENSOR
-
-    def _get_observation_space(self, *args, **kwargs):
-        return spaces.Box(
-            shape=(4,),
-            low=np.finfo(np.float32).min,
-            high=np.finfo(np.float32).max,
-            dtype=np.float32,
-        )
-
-    def get_observation(self, observations, episode, *args, **kwargs):
-        trans = self._sim.robot.base_transformation
-        forward = np.array([1.0, 0, 0])
-        heading = np.array(trans.transform_vector(forward))
-        forward = forward[[0, 2]]
-        heading = heading[[0, 2]]
-
-        heading_angle = get_angle(forward, heading)
-        c = np.cross(forward, heading) < 0
-        if not c:
-            heading_angle = -1.0 * heading_angle
-        return np.array([*trans.translation, heading_angle])
-
-
-@registry.register_sensor
-class JointSensor(Sensor):
+class JointSensor(UsesArticulatedAgentInterface, Sensor):
     def __init__(self, sim, config, *args, **kwargs):
         super().__init__(config=config)
         self._sim = sim
@@ -207,52 +213,75 @@ class JointSensor(Sensor):
 
     def _get_observation_space(self, *args, config, **kwargs):
         return spaces.Box(
-            shape=(config.DIMENSIONALITY,),
+            shape=(config.dimensionality,),
             low=np.finfo(np.float32).min,
             high=np.finfo(np.float32).max,
             dtype=np.float32,
         )
 
     def get_observation(self, observations, episode, *args, **kwargs):
-        joints_pos = self._sim.robot.arm_joint_pos
-        return np.array(joints_pos).astype(np.float32)
+        joints_pos = self._sim.get_agent_data(
+            self.agent_id
+        ).articulated_agent.arm_joint_pos
+        return np.array(joints_pos, dtype=np.float32)
 
 
 @registry.register_sensor
-class TrackMarkerSensor(Sensor):
-    """
-    Will track the first marker from the simulator's track markers array
-    relative to the robot's EE position
-    """
-
+class HumanoidJointSensor(UsesArticulatedAgentInterface, Sensor):
     def __init__(self, sim, config, *args, **kwargs):
         super().__init__(config=config)
         self._sim = sim
 
     def _get_uuid(self, *args, **kwargs):
-        return "track_marker"
+        return "humanoid_joint_sensor"
 
     def _get_sensor_type(self, *args, **kwargs):
         return SensorTypes.TENSOR
 
-    def _get_observation_space(self, *args, **kwargs):
+    def _get_observation_space(self, *args, config, **kwargs):
         return spaces.Box(
-            shape=(3,),
+            shape=(config.dimensionality,),
             low=np.finfo(np.float32).min,
             high=np.finfo(np.float32).max,
             dtype=np.float32,
         )
 
     def get_observation(self, observations, episode, *args, **kwargs):
-        pos = self._sim.get_track_markers_pos()[0]
-
-        trans = self._sim.get_robot_transform()
-        pos = trans.inverted().transform_point(pos)
-        return np.array(pos).astype(np.float32)
+        joints_pos = self._sim.get_agent_data(
+            self.agent_id
+        ).articulated_agent.get_joint_transform()[0]
+        return np.array(joints_pos, dtype=np.float32)
 
 
 @registry.register_sensor
-class EEPositionSensor(Sensor):
+class JointVelocitySensor(UsesArticulatedAgentInterface, Sensor):
+    def __init__(self, sim, config, *args, **kwargs):
+        super().__init__(config=config)
+        self._sim = sim
+
+    def _get_uuid(self, *args, **kwargs):
+        return "joint_vel"
+
+    def _get_sensor_type(self, *args, **kwargs):
+        return SensorTypes.TENSOR
+
+    def _get_observation_space(self, *args, config, **kwargs):
+        return spaces.Box(
+            shape=(config.dimensionality,),
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max,
+            dtype=np.float32,
+        )
+
+    def get_observation(self, observations, episode, *args, **kwargs):
+        joints_pos = self._sim.get_agent_data(
+            self.agent_id
+        ).articulated_agent.arm_velocity
+        return np.array(joints_pos, dtype=np.float32)
+
+
+@registry.register_sensor
+class EEPositionSensor(UsesArticulatedAgentInterface, Sensor):
     cls_uuid: str = "ee_pos"
 
     def __init__(self, sim, config, *args, **kwargs):
@@ -275,15 +304,21 @@ class EEPositionSensor(Sensor):
         )
 
     def get_observation(self, observations, episode, *args, **kwargs):
-        trans = self._sim.robot.base_transformation
-        ee_pos = self._sim.robot.ee_transform.translation
+        trans = self._sim.get_agent_data(
+            self.agent_id
+        ).articulated_agent.base_transformation
+        ee_pos = (
+            self._sim.get_agent_data(self.agent_id)
+            .articulated_agent.ee_transform()
+            .translation
+        )
         local_ee_pos = trans.inverted().transform_point(ee_pos)
 
-        return np.array(local_ee_pos)
+        return np.array(local_ee_pos, dtype=np.float32)
 
 
 @registry.register_sensor
-class RelativeRestingPositionSensor(Sensor):
+class RelativeRestingPositionSensor(UsesArticulatedAgentInterface, Sensor):
     cls_uuid: str = "relative_resting_position"
 
     def _get_uuid(self, *args, **kwargs):
@@ -305,17 +340,27 @@ class RelativeRestingPositionSensor(Sensor):
         )
 
     def get_observation(self, observations, episode, task, *args, **kwargs):
-        base_trans = self._sim.robot.base_transformation
-        ee_pos = self._sim.robot.ee_transform.translation
+        base_trans = self._sim.get_agent_data(
+            self.agent_id
+        ).articulated_agent.base_transformation
+        ee_pos = (
+            self._sim.get_agent_data(self.agent_id)
+            .articulated_agent.ee_transform()
+            .translation
+        )
         local_ee_pos = base_trans.inverted().transform_point(ee_pos)
 
         relative_desired_resting = task.desired_resting - local_ee_pos
 
-        return np.array(relative_desired_resting)
+        return np.array(relative_desired_resting, dtype=np.float32)
 
 
 @registry.register_sensor
 class RestingPositionSensor(Sensor):
+    """
+    Desired resting position in the articulated_agent coordinate frame.
+    """
+
     cls_uuid: str = "resting_position"
 
     def _get_uuid(self, *args, **kwargs):
@@ -337,17 +382,61 @@ class RestingPositionSensor(Sensor):
         )
 
     def get_observation(self, observations, episode, task, *args, **kwargs):
-        return np.array(task.desired_resting)
+        return np.array(task.desired_resting, dtype=np.float32)
 
 
 @registry.register_sensor
-class IsHoldingSensor(Sensor):
+class LocalizationSensor(UsesArticulatedAgentInterface, Sensor):
+    """
+    The position and angle of the articulated_agent in world coordinates.
+    """
+
+    cls_uuid = "localization_sensor"
+
     def __init__(self, sim, config, *args, **kwargs):
         super().__init__(config=config)
         self._sim = sim
 
     def _get_uuid(self, *args, **kwargs):
-        return "is_holding"
+        return LocalizationSensor.cls_uuid
+
+    def _get_sensor_type(self, *args, **kwargs):
+        return SensorTypes.TENSOR
+
+    def _get_observation_space(self, *args, **kwargs):
+        return spaces.Box(
+            shape=(4,),
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max,
+            dtype=np.float32,
+        )
+
+    def get_observation(self, observations, episode, *args, **kwargs):
+        articulated_agent = self._sim.get_agent_data(
+            self.agent_id
+        ).articulated_agent
+        T = articulated_agent.base_transformation
+        forward = np.array([1.0, 0, 0])
+        heading_angle = get_angle_to_pos(T.transform_vector(forward))
+        return np.array(
+            [*articulated_agent.base_pos, heading_angle], dtype=np.float32
+        )
+
+
+@registry.register_sensor
+class IsHoldingSensor(UsesArticulatedAgentInterface, Sensor):
+    """
+    Binary if the robot is holding an object or grasped onto an articulated object.
+    """
+
+    cls_uuid: str = "is_holding"
+
+    def __init__(self, sim, config, *args, **kwargs):
+        super().__init__(config=config)
+        self._sim = sim
+
+    def _get_uuid(self, *args, **kwargs):
+        return IsHoldingSensor.cls_uuid
 
     def _get_sensor_type(self, *args, **kwargs):
         return SensorTypes.TENSOR
@@ -356,11 +445,18 @@ class IsHoldingSensor(Sensor):
         return spaces.Box(shape=(1,), low=0, high=1, dtype=np.float32)
 
     def get_observation(self, observations, episode, *args, **kwargs):
-        return np.array(int(self._sim.grasp_mgr.is_grasped)).reshape((1,))
+        return np.array(
+            int(self._sim.get_agent_data(self.agent_id).grasp_mgr.is_grasped),
+            dtype=np.float32,
+        ).reshape((1,))
 
 
 @registry.register_measure
 class ObjectToGoalDistance(Measure):
+    """
+    Euclidean distance from the target object to the goal.
+    """
+
     cls_uuid: str = "object_to_goal_distance"
 
     def __init__(self, sim, config, *args, **kwargs):
@@ -380,11 +476,123 @@ class ObjectToGoalDistance(Measure):
         scene_pos = self._sim.get_scene_pos()
         target_pos = scene_pos[idxs]
         distances = np.linalg.norm(target_pos - goal_pos, ord=2, axis=-1)
-        self._metric = {idx: dist for idx, dist in zip(idxs, distances)}
+        self._metric = {str(idx): dist for idx, dist in enumerate(distances)}
 
 
 @registry.register_measure
-class EndEffectorToObjectDistance(Measure):
+class GfxReplayMeasure(Measure):
+    cls_uuid: str = "gfx_replay_keyframes_string"
+
+    def __init__(self, sim, config, *args, **kwargs):
+        self._sim = sim
+        self._enable_gfx_replay_save = (
+            self._sim.sim_config.sim_cfg.enable_gfx_replay_save
+        )
+        super().__init__(**kwargs)
+
+    @staticmethod
+    def _get_uuid(*args, **kwargs):
+        return GfxReplayMeasure.cls_uuid
+
+    def reset_metric(self, *args, **kwargs):
+        self._gfx_replay_keyframes_string = None
+        self.update_metric(*args, **kwargs)
+
+    def update_metric(self, *args, task, **kwargs):
+        if not task._is_episode_active and self._enable_gfx_replay_save:
+            self._metric = (
+                self._sim.gfx_replay_manager.write_saved_keyframes_to_string()
+            )
+        else:
+            self._metric = ""
+
+    def get_metric(self, force_get=False):
+        if force_get and self._enable_gfx_replay_save:
+            return (
+                self._sim.gfx_replay_manager.write_saved_keyframes_to_string()
+            )
+        return super().get_metric()
+
+
+@registry.register_measure
+class ObjAtGoal(Measure):
+    """
+    Returns if the target object is at the goal (binary) for each of the target
+    objects in the scene.
+    """
+
+    cls_uuid: str = "obj_at_goal"
+
+    def __init__(self, *args, sim, config, task, **kwargs):
+        self._config = config
+        self._succ_thresh = self._config.succ_thresh
+        super().__init__(*args, sim=sim, config=config, task=task, **kwargs)
+
+    @staticmethod
+    def _get_uuid(*args, **kwargs):
+        return ObjAtGoal.cls_uuid
+
+    def reset_metric(self, *args, episode, task, observations, **kwargs):
+        task.measurements.check_measure_dependencies(
+            self.uuid,
+            [
+                ObjectToGoalDistance.cls_uuid,
+            ],
+        )
+        self.update_metric(
+            *args,
+            episode=episode,
+            task=task,
+            observations=observations,
+            **kwargs,
+        )
+
+    def update_metric(self, *args, episode, task, observations, **kwargs):
+        obj_to_goal_dists = task.measurements.measures[
+            ObjectToGoalDistance.cls_uuid
+        ].get_metric()
+
+        self._metric = {
+            str(idx): dist < self._succ_thresh
+            for idx, dist in obj_to_goal_dists.items()
+        }
+
+
+@registry.register_measure
+class EndEffectorToGoalDistance(UsesArticulatedAgentInterface, Measure):
+    cls_uuid: str = "ee_to_goal_distance"
+
+    def __init__(self, sim, *args, **kwargs):
+        self._sim = sim
+        super().__init__(**kwargs)
+
+    @staticmethod
+    def _get_uuid(*args, **kwargs):
+        return EndEffectorToGoalDistance.cls_uuid
+
+    def reset_metric(self, *args, episode, **kwargs):
+        self.update_metric(*args, episode=episode, **kwargs)
+
+    def update_metric(self, *args, observations, **kwargs):
+        ee_pos = (
+            self._sim.get_agent_data(self.agent_id)
+            .articulated_agent.ee_transform()
+            .translation
+        )
+
+        goals = self._sim.get_targets()[1]
+
+        distances = np.linalg.norm(goals - ee_pos, ord=2, axis=-1)
+
+        self._metric = {str(idx): dist for idx, dist in enumerate(distances)}
+
+
+@registry.register_measure
+class EndEffectorToObjectDistance(UsesArticulatedAgentInterface, Measure):
+    """
+    Gets the distance between the end-effector and all current target object COMs.
+    """
+
     cls_uuid: str = "ee_to_object_distance"
 
     def __init__(self, sim, config, *args, **kwargs):
@@ -400,7 +608,11 @@ class EndEffectorToObjectDistance(Measure):
         self.update_metric(*args, episode=episode, **kwargs)
 
     def update_metric(self, *args, episode, **kwargs):
-        ee_pos = self._sim.robot.ee_transform.translation
+        ee_pos = (
+            self._sim.get_agent_data(self.agent_id)
+            .articulated_agent.ee_transform()
+            .translation
+        )
 
         idxs, _ = self._sim.get_targets()
         scene_pos = self._sim.get_scene_pos()
@@ -408,7 +620,7 @@ class EndEffectorToObjectDistance(Measure):
 
         distances = np.linalg.norm(target_pos - ee_pos, ord=2, axis=-1)
 
-        self._metric = {idx: dist for idx, dist in zip(idxs, distances)}
+        self._metric = {str(idx): dist for idx, dist in enumerate(distances)}
 
 
 @registry.register_measure
@@ -439,22 +651,55 @@ class EndEffectorToRestDistance(Measure):
 
 
 @registry.register_measure
-class DummyMeasure(Measure):
-    cls_uuid: str = "dummy_measure"
+class ReturnToRestDistance(UsesArticulatedAgentInterface, Measure):
+    """
+    Distance between end-effector and resting position if the articulated agent is holding the object.
+    """
+
+    cls_uuid: str = "return_to_rest_distance"
+
+    def __init__(self, sim, config, *args, **kwargs):
+        self._sim = sim
+        self._config = config
+        super().__init__(**kwargs)
 
     @staticmethod
     def _get_uuid(*args, **kwargs):
-        return DummyMeasure.cls_uuid
+        return ReturnToRestDistance.cls_uuid
 
     def reset_metric(self, *args, episode, **kwargs):
         self.update_metric(*args, episode=episode, **kwargs)
 
-    def update_metric(self, *args, episode, **kwargs):
-        self._metric = 0
+    def update_metric(self, *args, episode, task, observations, **kwargs):
+        to_resting = observations[RelativeRestingPositionSensor.cls_uuid]
+        rest_dist = np.linalg.norm(to_resting)
+
+        snapped_id = self._sim.get_agent_data(self.agent_id).grasp_mgr.snap_idx
+        abs_targ_obj_idx = self._sim.scene_obj_ids[task.abs_targ_idx]
+        picked_correct = snapped_id == abs_targ_obj_idx
+
+        if picked_correct:
+            self._metric = rest_dist
+        else:
+            T_inv = (
+                self._sim.get_agent_data(self.agent_id)
+                .articulated_agent.ee_transform()
+                .inverted()
+            )
+            idxs, _ = self._sim.get_targets()
+            scene_pos = self._sim.get_scene_pos()
+            pos = scene_pos[idxs][0]
+            pos = T_inv.transform_point(pos)
+
+            self._metric = np.linalg.norm(task.desired_resting - pos)
 
 
 @registry.register_measure
-class RobotCollisions(Measure):
+class RobotCollisions(UsesArticulatedAgentInterface, Measure):
+    """
+    Returns a dictionary with the counts for different types of collisions.
+    """
+
     cls_uuid: str = "robot_collisions"
 
     def __init__(self, *args, sim, config, task, **kwargs):
@@ -474,11 +719,11 @@ class RobotCollisions(Measure):
             episode=episode,
             task=task,
             observations=observations,
-            **kwargs
+            **kwargs,
         )
 
     def update_metric(self, *args, episode, task, observations, **kwargs):
-        cur_coll_info = self._task.get_cur_collision_info()
+        cur_coll_info = self._task.get_cur_collision_info(self.agent_id)
         self._accum_coll_info += cur_coll_info
         self._metric = {
             "total_collisions": self._accum_coll_info.total_collisions,
@@ -489,13 +734,19 @@ class RobotCollisions(Measure):
 
 
 @registry.register_measure
-class RobotForce(Measure):
-    cls_uuid: str = "robot_force"
+class RobotForce(UsesArticulatedAgentInterface, Measure):
+    """
+    The amount of force in newton's accumulatively applied by the robot.
+    """
+
+    cls_uuid: str = "articulated_agent_force"
 
     def __init__(self, *args, sim, config, task, **kwargs):
         self._sim = sim
         self._config = config
         self._task = task
+        self._count_obj_collisions = self._task._config.count_obj_collisions
+        self._min_force = self._config.min_force
         super().__init__(*args, sim=sim, config=config, task=task, **kwargs)
 
     @staticmethod
@@ -512,7 +763,7 @@ class RobotForce(Measure):
             episode=episode,
             task=task,
             observations=observations,
-            **kwargs
+            **kwargs,
         )
 
     @property
@@ -520,15 +771,17 @@ class RobotForce(Measure):
         return self._add_force
 
     def update_metric(self, *args, episode, task, observations, **kwargs):
-        robot_force, _, overall_force = self._task.get_coll_forces()
-        if self._task._config.COUNT_OBJ_COLLISIONS:
+        articulated_agent_force, _, overall_force = self._task.get_coll_forces(
+            self.agent_id
+        )
+        if self._count_obj_collisions:
             self._cur_force = overall_force
         else:
-            self._cur_force = robot_force
+            self._cur_force = articulated_agent_force
 
         if self._prev_force is not None:
             self._add_force = self._cur_force - self._prev_force
-            if self._add_force > self._config.MIN_FORCE:
+            if self._add_force > self._min_force:
                 self._accum_force += self._add_force
                 self._prev_force = self._cur_force
             elif self._add_force < 0.0:
@@ -538,108 +791,56 @@ class RobotForce(Measure):
         else:
             self._prev_force = self._cur_force
             self._add_force = 0.0
-        self._metric = self._accum_force
+
+        self._metric = {
+            "accum": self._accum_force,
+            "instant": self._cur_force,
+        }
 
 
 @registry.register_measure
-class RearrangeReachReward(Measure):
-    cls_uuid: str = "rearrange_reach_reward"
+class NumStepsMeasure(Measure):
+    """
+    The number of steps elapsed in the current episode.
+    """
+
+    cls_uuid: str = "num_steps"
 
     @staticmethod
     def _get_uuid(*args, **kwargs):
-        return RearrangeReachReward.cls_uuid
-
-    def __init__(self, *args, sim, config, task, **kwargs):
-        self._config = config
-        super().__init__(*args, sim=sim, config=config, task=task, **kwargs)
+        return NumStepsMeasure.cls_uuid
 
     def reset_metric(self, *args, episode, task, observations, **kwargs):
-        self._prev = None
-        task.measurements.check_measure_dependencies(
-            self.uuid,
-            [
-                EndEffectorToRestDistance.cls_uuid,
-            ],
-        )
-        self.update_metric(
-            *args,
-            episode=episode,
-            task=task,
-            observations=observations,
-            **kwargs
-        )
+        self._metric = 0
 
     def update_metric(self, *args, episode, task, observations, **kwargs):
-        cur_dist = task.measurements.measures[
-            EndEffectorToRestDistance.cls_uuid
-        ].get_metric()
-        if self._config.DIFF_REWARD:
-            if self._prev is None:
-                self._metric = 0.0
-            else:
-                self._metric = self._prev - cur_dist
-        else:
-            self._metric = -1.0 * self._config.SCALE * cur_dist
-
-        self._prev = cur_dist
+        self._metric += 1
 
 
 @registry.register_measure
-class RearrangeReachSuccess(Measure):
-    cls_uuid: str = "rearrange_reach_success"
+class ForceTerminate(Measure):
+    """
+    If the accumulated force throughout this episode exceeds the limit.
+    """
 
-    @staticmethod
-    def _get_uuid(*args, **kwargs):
-        return RearrangeReachSuccess.cls_uuid
-
-    def __init__(self, *args, sim, config, task, **kwargs):
-        super().__init__(*args, sim=sim, config=config, task=task, **kwargs)
-        self._config = config
-
-    def reset_metric(self, *args, episode, task, observations, **kwargs):
-        task.measurements.check_measure_dependencies(
-            self.uuid,
-            [
-                EndEffectorToRestDistance.cls_uuid,
-            ],
-        )
-        self.update_metric(
-            *args,
-            episode=episode,
-            task=task,
-            observations=observations,
-            **kwargs
-        )
-
-    def update_metric(self, *args, episode, task, observations, **kwargs):
-        self._metric = (
-            task.measurements.measures[
-                EndEffectorToRestDistance.cls_uuid
-            ].get_metric()
-            < self._config.SUCC_THRESH
-        )
-
-
-@registry.register_measure
-class RearrangePickReward(Measure):
-    cls_uuid: str = "rearrangepick_reward"
+    cls_uuid: str = "force_terminate"
 
     def __init__(self, *args, sim, config, task, **kwargs):
         self._sim = sim
         self._config = config
+        self._max_accum_force = self._config.max_accum_force
+        self._max_instant_force = self._config.max_instant_force
         self._task = task
         super().__init__(*args, sim=sim, config=config, task=task, **kwargs)
 
     @staticmethod
     def _get_uuid(*args, **kwargs):
-        return RearrangePickReward.cls_uuid
+        return ForceTerminate.cls_uuid
 
     def reset_metric(self, *args, episode, task, observations, **kwargs):
         task.measurements.check_measure_dependencies(
             self.uuid,
             [
-                EndEffectorToObjectDistance.cls_uuid,
-                RearrangePickSuccess.cls_uuid,
                 RobotForce.cls_uuid,
             ],
         )
@@ -649,88 +850,108 @@ class RearrangePickReward(Measure):
             episode=episode,
             task=task,
             observations=observations,
-            **kwargs
+            **kwargs,
         )
 
     def update_metric(self, *args, episode, task, observations, **kwargs):
-        ee_to_object_distance = task.measurements.measures[
-            EndEffectorToObjectDistance.cls_uuid
+        force_info = task.measurements.measures[
+            RobotForce.cls_uuid
         ].get_metric()
-        ee_to_rest_distance = task.measurements.measures[
-            EndEffectorToRestDistance.cls_uuid
-        ].get_metric()
-        success = task.measurements.measures[
-            RearrangePickSuccess.cls_uuid
-        ].get_metric()
-
-        reward = 0
-
-        snapped_id = self._sim.grasp_mgr.snap_idx
-        cur_picked = snapped_id is not None
-
-        if cur_picked:
-            dist_to_goal = ee_to_rest_distance
+        accum_force = force_info["accum"]
+        instant_force = force_info["instant"]
+        if self._max_accum_force > 0 and accum_force > self._max_accum_force:
+            rearrange_logger.debug(
+                f"Force threshold={self._max_accum_force} exceeded with {accum_force}, ending episode"
+            )
+            self._task.should_end = True
+            self._metric = True
+        elif (
+            self._max_instant_force > 0
+            and instant_force > self._max_instant_force
+        ):
+            rearrange_logger.debug(
+                f"Force instant threshold={self._max_instant_force} exceeded with {instant_force}, ending episode"
+            )
+            self._task.should_end = True
+            self._metric = True
         else:
-            dist_to_goal = ee_to_object_distance[task.targ_idx]
+            self._metric = False
 
-        abs_targ_obj_idx = self._sim.scene_obj_ids[task.abs_targ_idx]
 
-        did_pick = cur_picked and (not self._task)
-        if did_pick:
-            if snapped_id == abs_targ_obj_idx:
-                task.n_succ_picks += 1
-                reward += self._config.PICK_REWARD
-                # If we just transitioned to the next stage our current
-                # distance is stale.
-                self._task.cur_dist = -1
-            else:
-                # picked the wrong object
-                reward -= self._config.WRONG_PICK_PEN
-                if self._config.WRONG_PICK_SHOULD_END:
-                    self._task.should_end = True
-                self._metric = reward
-                return
+@registry.register_measure
+class DidViolateHoldConstraintMeasure(UsesArticulatedAgentInterface, Measure):
+    cls_uuid: str = "did_violate_hold_constraint"
 
-        if self._config.USE_DIFF:
-            if self._task.cur_dist < 0:
-                dist_diff = 0.0
-            else:
-                dist_diff = self._task.cur_dist - dist_to_goal
+    @staticmethod
+    def _get_uuid(*args, **kwargs):
+        return DidViolateHoldConstraintMeasure.cls_uuid
 
-            # Filter out the small fluctuations
-            dist_diff = round(dist_diff, 3)
-            reward += self._config.DIST_REWARD * dist_diff
-        else:
-            reward -= self._config.DIST_REWARD * dist_to_goal
-        self._task.cur_dist = dist_to_goal
+    def __init__(self, *args, sim, **kwargs):
+        self._sim = sim
 
-        if not cur_picked and self._task.prev_picked:
-            # Dropped the object
-            reward -= self._config.DROP_PEN
-            if self._config.DROP_OBJ_SHOULD_END:
-                self._task.should_end = True
-            self._metric = reward
-            return
+        super().__init__(*args, sim=sim, **kwargs)
 
-        if success:
-            reward += self._config.SUCC_REWARD
+    def reset_metric(self, *args, episode, task, observations, **kwargs):
+        self.update_metric(
+            *args,
+            episode=episode,
+            task=task,
+            observations=observations,
+            **kwargs,
+        )
+
+    def update_metric(self, *args, **kwargs):
+        self._metric = self._sim.get_agent_data(
+            self.agent_id
+        ).grasp_mgr.is_violating_hold_constraint()
+
+
+class RearrangeReward(UsesArticulatedAgentInterface, Measure):
+    """
+    An abstract class defining some measures that are always a part of any
+    reward function in the Habitat 2.0 tasks.
+    """
+
+    def __init__(self, *args, sim, config, task, **kwargs):
+        self._sim = sim
+        self._config = config
+        self._task = task
+        self._force_pen = self._config.force_pen
+        self._max_force_pen = self._config.max_force_pen
+        super().__init__(*args, sim=sim, config=config, task=task, **kwargs)
+
+    def reset_metric(self, *args, episode, task, observations, **kwargs):
+        task.measurements.check_measure_dependencies(
+            self.uuid,
+            [
+                RobotForce.cls_uuid,
+                ForceTerminate.cls_uuid,
+            ],
+        )
+
+        self.update_metric(
+            *args,
+            episode=episode,
+            task=task,
+            observations=observations,
+            **kwargs,
+        )
+
+    def update_metric(self, *args, episode, task, observations, **kwargs):
+        reward = 0.0
 
         reward += self._get_coll_reward()
 
-        if self._sim.grasp_mgr.is_violating_hold_constraint():
-            reward -= self._config.CONSTRAINT_VIOLATE_PEN
+        if self._sim.get_agent_data(
+            self.agent_id
+        ).grasp_mgr.is_violating_hold_constraint():
+            reward -= self._config.constraint_violate_pen
 
-        accum_force = task.measurements.measures[
-            RobotForce.cls_uuid
+        force_terminate = task.measurements.measures[
+            ForceTerminate.cls_uuid
         ].get_metric()
-        if (
-            self._config.MAX_ACCUM_FORCE is not None
-            and accum_force > self._config.MAX_ACCUM_FORCE
-        ):
-            reward -= self._config.FORCE_END_PEN
-            self._task.should_end = True
-
-        self._task.prev_picked = cur_picked
+        if force_terminate:
+            reward -= self._config.force_end_pen
 
         self._metric = reward
 
@@ -740,54 +961,96 @@ class RearrangePickReward(Measure):
         force_metric = self._task.measurements.measures[RobotForce.cls_uuid]
         # Penalize the force that was added to the accumulated force at the
         # last time step.
-        reward -= min(
-            self._config.FORCE_PEN * force_metric.add_force,
-            self._config.MAX_FORCE_PEN,
+        reward -= max(
+            0,  # This penalty is always positive
+            min(
+                self._force_pen * force_metric.add_force,
+                self._max_force_pen,
+            ),
         )
         return reward
 
 
 @registry.register_measure
-class RearrangePickSuccess(Measure):
-    cls_uuid: str = "rearrangepick_success"
+class DoesWantTerminate(Measure):
+    """
+    Returns 1 if the agent has called the stop action and 0 otherwise.
+    """
 
-    def __init__(self, sim, config, *args, **kwargs):
-        self._sim = sim
-        self._config = config
-        self._prev_ee_pos = None
-        super().__init__(**kwargs)
+    cls_uuid: str = "does_want_terminate"
 
     @staticmethod
     def _get_uuid(*args, **kwargs):
-        return RearrangePickSuccess.cls_uuid
+        return DoesWantTerminate.cls_uuid
 
-    def reset_metric(self, *args, episode, task, observations, **kwargs):
+    def reset_metric(self, *args, **kwargs):
+        self.update_metric(*args, **kwargs)
+
+    def update_metric(self, *args, task, **kwargs):
+        self._metric = task.actions["rearrange_stop"].does_want_terminate
+
+
+@registry.register_measure
+class BadCalledTerminate(Measure):
+    """
+    Returns 0 if the agent has called the stop action when the success
+    condition is also met or not called the stop action when the success
+    condition is not met. Returns 1 otherwise.
+    """
+
+    cls_uuid: str = "bad_called_terminate"
+
+    @staticmethod
+    def _get_uuid(*args, **kwargs):
+        return BadCalledTerminate.cls_uuid
+
+    def __init__(self, config, task, *args, **kwargs):
+        super().__init__(**kwargs)
+        self._success_measure_name = task._config.success_measure
+        self._config = config
+
+    def reset_metric(self, *args, task, **kwargs):
         task.measurements.check_measure_dependencies(
-            self.uuid, [EndEffectorToObjectDistance.cls_uuid]
+            self.uuid,
+            [DoesWantTerminate.cls_uuid, self._success_measure_name],
         )
-        self._prev_ee_pos = observations["ee_pos"]
-        self.update_metric(
-            *args,
-            episode=episode,
-            task=task,
-            observations=observations,
-            **kwargs
-        )
+        self.update_metric(*args, task=task, **kwargs)
 
-    def update_metric(self, *args, episode, task, observations, **kwargs):
-        ee_to_rest_distance = task.measurements.measures[
-            EndEffectorToRestDistance.cls_uuid
+    def update_metric(self, *args, task, **kwargs):
+        does_action_want_stop = task.measurements.measures[
+            DoesWantTerminate.cls_uuid
+        ].get_metric()
+        is_succ = task.measurements.measures[
+            self._success_measure_name
         ].get_metric()
 
-        # Is the agent holding the object and it's at the start?
-        abs_targ_obj_idx = self._sim.scene_obj_ids[task.abs_targ_idx]
+        self._metric = (not is_succ) and does_action_want_stop
 
-        # Check that we are holding the right object and the object is actually
-        # being held.
-        self._metric = (
-            abs_targ_obj_idx == self._sim.grasp_mgr.snap_idx
-            and not self._sim.grasp_mgr.is_violating_hold_constraint()
-            and ee_to_rest_distance < self._config.SUCC_THRESH
-        )
 
-        self._prev_ee_pos = observations["ee_pos"]
+@registry.register_measure
+class RuntimePerfStats(Measure):
+    cls_uuid: str = "habitat_perf"
+
+    @staticmethod
+    def _get_uuid(*args, **kwargs):
+        return RuntimePerfStats.cls_uuid
+
+    def __init__(self, sim, config, *args, **kwargs):
+        self._sim = sim
+        self._sim.enable_perf_logging()
+        self._disable_logging = config.disable_logging
+        super().__init__()
+
+    def reset_metric(self, *args, **kwargs):
+        self._metric_queue = defaultdict(deque)
+        self._metric = {}
+
+    def update_metric(self, *args, task, **kwargs):
+        for k, v in self._sim.get_runtime_perf_stats().items():
+            self._metric_queue[k].append(v)
+        if self._disable_logging:
+            self._metric = {}
+        else:
+            self._metric = {
+                k: np.mean(v) for k, v in self._metric_queue.items()
+            }
