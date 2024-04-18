@@ -117,11 +117,11 @@ class Env:
         self._sim = make_sim(
             id_sim=self._config.SIMULATOR.TYPE, config=self._config.SIMULATOR
         )
-        setting = NavMeshSettings()
-        setting.agent_radius = 0.18
-        setting.agent_height = 0.88
-        setting.include_static_objects = True
-        self._sim.recompute_navmesh(self._sim.pathfinder, setting)
+        self.setting = NavMeshSettings()
+        self.setting.agent_radius = 0.18
+        self.setting.agent_height = 0.88
+        self.setting.include_static_objects = True
+        self._sim.recompute_navmesh(self._sim.pathfinder, self.setting)
         self._task = make_task(
             self._config.TASK.TYPE,
             config=self._config.TASK,
@@ -252,6 +252,8 @@ class Env:
 
         self._current_episode = next(self._episode_iterator)
         self.reconfigure(self._config)
+        self._sim.recompute_navmesh(self._sim.pathfinder, self.setting)
+        
         rigid_obj_mgr = self._sim.get_rigid_object_manager()
         self.object_to_datset_mapping = self._dataset.category_to_task_category_id
         # Remove existing objects from last episode
