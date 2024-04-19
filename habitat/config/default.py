@@ -243,7 +243,7 @@ _C.TASK.ACTIONS.FOUND.TYPE = "FoundObjectAction"
 # -----------------------------------------------------------------------------
 _C.TASK.DISTANCE_TO_MULTI_GOAL = CN()
 _C.TASK.DISTANCE_TO_MULTI_GOAL.TYPE = "DistanceToMultiGoal"
-_C.TASK.DISTANCE_TO_MULTI_GOAL.DISTANCE_TO = "POINT" #"VIEW_POINTS"
+_C.TASK.DISTANCE_TO_MULTI_GOAL.DISTANCE_TO = "VIEW_POINTS" #"POINT"
 # -----------------------------------------------------------------------------
 # # EPISODE_LENGTH MEASUREMENT
 # -----------------------------------------------------------------------------
@@ -263,7 +263,7 @@ _C.TASK.RAW_METRICS.TYPE = "RawMetrics"
 # -----------------------------------------------------------------------------
 _C.TASK.DISTANCE_TO_CURR_GOAL = CN()
 _C.TASK.DISTANCE_TO_CURR_GOAL.TYPE = "DistanceToCurrGoal"
-_C.TASK.DISTANCE_TO_CURR_GOAL.DISTANCE_TO = "POINT" #"VIEW_POINTS"
+_C.TASK.DISTANCE_TO_CURR_GOAL.DISTANCE_TO = "VIEW_POINTS" #"POINT"
 # -----------------------------------------------------------------------------
 # # SUB_SUCCESS MEASUREMENT
 # -----------------------------------------------------------------------------

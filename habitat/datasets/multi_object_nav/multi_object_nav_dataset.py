@@ -85,7 +85,8 @@ class LangMultiObjectNavDatasetV1(PointNavDatasetV1):
           #      view_location = ObjectViewLocation(**view)  # type: ignore
            #     view_location.agent_state = AgentState(**view_location.agent_state)  # type: ignore
             #    g.view_points[vidx] = view_location
-
+        for goal in g.goal_object:
+            goal.navigable_points = [[float(v[0]), float(v[1]), float(v[2])] for v in goal.navigable_points][:20]
         return g
 
     def from_json(

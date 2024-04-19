@@ -18,7 +18,7 @@ We use [Habitat Synthetic Scenes Dataset (HSSD)](https://3dlg-hcvc.github.io/hss
 
 ## Evaluation
 
-The episode terminates when an agent discovers all objects in the sequence of the current episode or when it calls an incorrect FOUND action. A FOUND action is incorrect if it is called when the agent is not within 1.5m from its current target object. Note that this does not require the agent to be viewing the object at the time of calling FOUND. After the episode terminates, the agent is evaluated using the Progress and PPL metrics that are defined below.  
+The episode terminates when an agent discovers all objects in the sequence of the current episode or when it calls an incorrect FOUND action. A FOUND action is incorrect if it is called when the agent is not within 0.5m from its current target object viewpoints (sampled around the goal centroid). Note that this does not require the agent to be viewing the object at the time of calling FOUND. After the episode terminates, the agent is evaluated using the Progress and PPL metrics that are defined below.  
 **Progress**: Fraction of object goals that are successfully FOUND. This effectively measures if the agent was able to navigate to goals.  
 **PPL**: Overall path length weighted by progress. This effectively measures the path efficiency of the agent. Formally, 
 

@@ -772,26 +772,31 @@ class SPL(Measure):
 
 
 def calculate_episode_multigoal_sp(episode, sim: Simulator):
-    all_gs = np.array([go.centroid for ep in episode.goals for go in ep.goal_object] + [episode.start_position])
+    point_l = [vp for ep in episode.goals for go in ep.goal_object for vp in go.navigable_points] + [episode.start_position]
+    all_gs = np.array(point_l)
+    #all_dists = np.eye(all_gs.shape[0])
+    
+    #for i, point in enumerate(point_l):
+     #   all_dists[i, :] = sim.geodesic_distance(point, all_gs)
     all_dists = squareform(pdist(all_gs, lambda x, y: sim.geodesic_distance(
         x, y
     )
-                                 ))
+    ))
     for i, mg in enumerate(episode.goals):
-        start = sum([len(episode.goals[ind].goal_object) for ind in range(i)])
-        end = sum([len(episode.goals[ind].goal_object) for ind in range(i)]) + len(mg.goal_object)
+        start = sum([len(f.navigable_points) for ind in range(i) for f in episode.goals[ind].goal_object])
+        end = sum([len(f.navigable_points) for ind in range(i) for f in episode.goals[ind].goal_object]) + sum(len(g.navigable_points) for g in mg.goal_object)
         all_dists[start:end, start:end] = np.inf
 
-        startpost = sum([len(episode.goals[ind].goal_object) for ind in range(min(i + 2, len(episode.goals)))])
+        startpost = sum([len(f.navigable_points) for ind in range(min(i + 2, len(episode.goals))) for f in episode.goals[ind].goal_object])
         endpost = all_dists.shape[0] - 1
         all_dists[start:end, startpost:endpost] = np.inf
 
         startpre = 0
-        endpre = sum([len(episode.goals[ind].goal_object) for ind in range(i - 1)])
+        endpre = sum([len(f.navigable_points) for ind in range(i - 1) for f in episode.goals[ind].goal_object])
         all_dists[start:end, startpre:endpre] = np.inf
 
-    all_dists[-1, len(episode.goals[0].goal_object):] = np.inf
-    all_dists[len(episode.goals[0].goal_object):, -1] = np.inf
+    all_dists[-1, sum(len(g.navigable_points) for g in episode.goals[0].goal_object):] = np.inf
+    all_dists[sum(len(g.navigable_points) for g in episode.goals[0].goal_object):, -1] = np.inf
 
     return dijkstra(all_dists)
 
@@ -822,9 +827,8 @@ class MSPL(Measure):
         self._start_end_episode_distance = 0
 
         self.all_sps = calculate_episode_multigoal_sp(episode, self._sim)
-        start = sum([len(episode.goals[ind].goal_object) for ind in range(len(episode.goals) - 1)])
-        end = sum([len(episode.goals[ind].goal_object) for ind in range(len(episode.goals) - 1)]) + len(
-            episode.goals[- 1].goal_object)
+        start = sum([len(go.navigable_points) for ind in range(len(episode.goals) - 1) for go in episode.goals[ind].goal_object])
+        end = -1
         self._start_end_episode_distance = min(self.all_sps[-1, start:end]).item()
 
         # for goal_number in range(len(episode.goals) ):  # Find distances between successive goals and keep adding them
@@ -939,9 +943,9 @@ class PSPL(Measure):
             self._start_subgoal_agent_distance.append(self._agent_episode_distance)
 
         if ep_percentage_success > 0:
-            start = sum([len(episode.goals[ind].goal_object) for ind in range(task.current_goal_index - 1)])
-            end = sum([len(episode.goals[ind].goal_object) for ind in range(task.current_goal_index - 1)]) + len(
-                episode.goals[task.current_goal_index - 1].goal_object)
+            start = sum([len(go.navigable_points) for ind in range(task.current_goal_index - 1) for go in episode.goals[ind].goal_object])
+            end = sum([len(go.navigable_points) for ind in range(task.current_goal_index - 1) for go in episode.goals[ind].goal_object]) + sum(
+                len(go.navigable_points) for go in episode.goals[task.current_goal_index - 1].goal_object)
             sp_start_to_sgoal = min(self.all_sps[-1, start:end]).item()
 
             self._metric = ep_percentage_success * (
@@ -1790,7 +1794,7 @@ class DistanceToCurrGoal(Measure):
             #    for goal in episode.goals[task.current_goal_index]
             #    for view_point in goal.viewpoints
             #]
-            self._subgoal_view_points = episode.goals[task.current_goal_index].viewpoints
+            self._subgoal_view_points = [go.navigable_points for go in episode.goals[task.current_goal_index].goal_object]
         self.update_metric(*args, episode=episode, task=task, **kwargs)
 
     def _euclidean_distance(self, position_a, position_b):
@@ -1807,7 +1811,7 @@ class DistanceToCurrGoal(Measure):
                 current_position, [go.centroid for go in episode.goals[curr_goal_ind].goal_object]
             )
         elif self._config.DISTANCE_TO == "VIEW_POINTS":
-            self._subgoal_view_points = episode.goals[task.current_goal_index].viewpoints
+            self._subgoal_view_points = [go.navigable_points for go in episode.goals[task.current_goal_index].goal_object]
             # distance_to_subgoal = self._sim.geodesic_distance(
             #     current_position, self._subgoal_view_points
             # )
@@ -1818,21 +1822,11 @@ class DistanceToCurrGoal(Measure):
             #         and ep_ln >= 1390):
             #     print('Here.')
             distances = []
-            goal_coord = episode.goals[task.current_goal_index].position
-            goal_coord2D = [goal_coord[0], goal_coord[2]]
-            for viewpoint in self._subgoal_view_points:
-                tmp = self._sim.geodesic_distance(current_position, viewpoint)
-                viewpoint2D = [viewpoint[0], viewpoint[2]]
-                tmp += self._euclidean_distance(viewpoint2D, goal_coord2D)
-                distances.append(tmp)
-            distance_to_subgoal = min(distances)
-            if math.isinf(distance_to_subgoal):
-                currpos2D = [current_position[0], current_position[2]]
-                for viewpoint in self._subgoal_view_points:
-                    viewpoint2D = [viewpoint[0], viewpoint[2]]
-                    tmp = self._euclidean_distance(currpos2D, viewpoint2D)
-                    tmp += self._euclidean_distance(viewpoint2D, goal_coord2D)
-                    distances.append(tmp)
+            for g_viewpoints in self._subgoal_view_points:
+                min_d = self._sim.geodesic_distance(
+                    current_position, g_viewpoints
+                )
+                distances.append(min_d)
             distance_to_subgoal = min(distances)
         else:
             logger.error(

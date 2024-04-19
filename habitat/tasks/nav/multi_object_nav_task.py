@@ -29,7 +29,6 @@ from habitat.tasks.nav.nav import (
     NavigationTask,
 )
 
-import clip
 import re
 
 @attr.s(auto_attribs=True, kw_only=True)
@@ -195,7 +194,7 @@ class MultiObjectGoalSensor(Sensor):
         sensor_shape = (1,)
         max_value = (self.config.GOAL_SPEC_MAX_VAL - 1,)
         if self.config.GOAL_SPEC == "CATEGORY_LABEL_TEXT":
-            return spaces.Box(low=0, high=np.inf, shape=(77,), dtype=np.int64)
+            return spaces.Text(255)
         elif self.config.GOAL_SPEC == "TASK_CATEGORY_ID":
             max_value = max(
                 self._dataset.category_to_task_category_id.values()
@@ -225,9 +224,7 @@ class MultiObjectGoalSensor(Sensor):
             if curr_goal_ind == len(episode.goals):
                 curr_goal_ind = -1
             category_label = episode.goals[curr_goal_ind].language_instruction
-            tokens = clip.tokenize(category_label, context_length=77).numpy()
-            return tokens
-            # return np.array([category_label])
+            return category_label
         elif self.config.GOAL_SPEC == "TASK_CATEGORY_ID":
             if len(episode.goals) == 0:
                 logger.error(
