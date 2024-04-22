@@ -55,7 +55,9 @@ Extract them under `multion-challenge/data`.
 Download the dataset.
 
 ```
-wget -O datasets.zip "https://aspis.cmpt.sfu.ca/projects/multion-challenge/2023/challenge/datasets.zip"
+wget -O train.zip "https://aspis.cmpt.sfu.ca/projects/langmon/train"
+wget -O val.zip "https://aspis.cmpt.sfu.ca/projects/langmon/val"
+wget -O minival.zip "https://aspis.cmpt.sfu.ca/projects/langmon/minival"
 ```
 
 Extract them and place them inside `multion-challenge/data` in the following format:
