@@ -29,7 +29,7 @@ The episode terminates when an agent discovers all objects in the sequence of th
 To participate in the challenge, visit our [EvalAI](https://eval.ai/web/challenges/challenge-page/2276/overview) page. Participants need to upload docker containers with their agents using EvalAI. Before making your submission, you should run your container locally on the minival data split to ensure the performance metrics match with those of remote evaluation. We provide a base docker image and participants only need to edit `evaluate.py` file which implements the navigation agent. Instructions for building your docker container are provided below.
 
 
-1. Install [nvidia-docker v2](https://github.com/NVIDIA/nvidia-docker) by following instructions given [here](https://github.com/nvidia/nvidia-docker/wiki/Installation-(version-2.0)).
+1. Install [nvidia-container-toolkit](https://github.com/NVIDIA/nvidia-container-toolkit) by following instructions given [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
 2. Clone this repository: 
 ```
@@ -38,7 +38,7 @@ cd multion-challenge
 ```
 3. Edit `evaluate.py` to implement your agent. Currently, it uses an agent taking random actions.
 
-4. Make changes in the the provided `Dockerfile` if your agent has additional dependencies. They should be installed inside a conda environment named `habitat` that already exists in our docker.
+4. Make changes in the provided `Dockerfile` if your agent has additional dependencies. They should be installed inside a conda environment named `habitat` that already exists in our docker.
 
 5. Build the docker container (this may need `sudo` priviliges).
 
