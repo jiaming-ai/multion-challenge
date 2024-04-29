@@ -290,7 +290,7 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
             # Ignore key as it gets propogated to sensor below
             ignore_keys={"gpu_gpu"},
         )
-        sim_config.scene_dataset_config_file = 'data/scene_datasets/fphab/hssd-hab-mon.scene_dataset_config.json'
+        sim_config.scene_dataset_config_file = 'data/scene_datasets/fphab/hssd-hab.scene_dataset_config.json'
         sim_config.scene_id = self.habitat_config.SCENE
         agent_config = habitat_sim.AgentConfiguration()
         overwrite_config(
