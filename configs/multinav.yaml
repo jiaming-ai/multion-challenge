@@ -64,4 +64,4 @@ DATASET:
   TYPE: MultiObjectNav-v1
   SPLIT: minival
   SCENES_DIR: "data/scene_datasets/fphab/scenes"
-  DATA_PATH: "data/datasets/3_ON/{split}/{split}.json.gz"
+  DATA_PATH: "data/datasets/{split}/{split}.json.gz"
