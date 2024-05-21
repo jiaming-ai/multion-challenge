@@ -48,7 +48,7 @@ docker build -f Dockerfile -t multi_on:latest .
 
 Note that we use `configs/multinav.yaml` as the configuration file. We use v0.2.5 for both [habitat-sim](https://github.com/facebookresearch/habitat-sim) and [habitat-lab](https://github.com/facebookresearch/habitat-lab).
 
-6. Download scenes [Habitat Synthetic Scenes Dataset (HSSD)](https://3dlg-hcvc.github.io/hssd/) and place the data in: `multion-challenge/data/scene_datasets/fphab`. 
+6. Download scenes [Habitat Synthetic Scenes Dataset (HSSD)](https://huggingface.co/datasets/hssd/hssd-hab) and place the data in: `multion-challenge/data/scene_datasets/fphab`. 
 
 Extract them under `multion-challenge/data`.
 
