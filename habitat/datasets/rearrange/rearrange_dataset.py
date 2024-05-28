@@ -11,18 +11,16 @@ import attr
 import numpy as np
 
 import habitat_sim.utils.datasets_download as data_downloader
-from habitat.core.dataset import Episode, Dataset
+from habitat.core.dataset import Episode
 from habitat.core.logging import logger
 from habitat.core.registry import registry
 from habitat.core.utils import DatasetFloatJSONEncoder
-#from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
+from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
 from habitat.datasets.utils import check_and_gen_physics_config
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
 
-class PointNavDatasetV1(Dataset):
-    pass
 
 @attr.s(auto_attribs=True, kw_only=True)
 class RearrangeEpisode(Episode):

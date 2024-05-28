@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
-# Copyright (c) Facebook, Inc. and its affiliates.
+# Copyright (c) Meta Platforms, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
 import gzip
 import json
 import os
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
-from habitat.config import Config
+from habitat.config import read_write
 from habitat.core.dataset import ALL_SCENES_MASK, Dataset
 from habitat.core.registry import registry
 from habitat.tasks.nav.nav import (
@@ -17,6 +17,10 @@ from habitat.tasks.nav.nav import (
     NavigationGoal,
     ShortestPathPoint,
 )
+
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
+
 
 CONTENT_SCENES_PATH_FIELD = "content_scenes_path"
 DEFAULT_SCENE_PATH_PREFIX = "data/scene_datasets/"
@@ -30,40 +34,43 @@ class PointNavDatasetV1(Dataset):
     content_scenes_path: str = "{data_path}/content/{scene}.json.gz"
 
     @staticmethod
-    def check_config_paths_exist(config: Config) -> bool:
+    def check_config_paths_exist(config: "DictConfig") -> bool:
         return os.path.exists(
-            config.DATA_PATH.format(split=config.SPLIT)
-        ) and os.path.exists(config.SCENES_DIR)
+            config.data_path.format(split=config.split)
+        ) and os.path.exists(config.scenes_dir)
 
     @classmethod
-    def get_scenes_to_load(cls, config: Config) -> List[str]:
+    def get_scenes_to_load(cls, config: "DictConfig") -> List[str]:
         r"""Return list of scene ids for which dataset has separate files with
         episodes.
         """
-        assert cls.check_config_paths_exist(config)
         dataset_dir = os.path.dirname(
-            config.DATA_PATH.format(split=config.SPLIT)
+            config.data_path.format(split=config.split)
         )
+        if not cls.check_config_paths_exist(config):
+            raise FileNotFoundError(
+                f"Could not find dataset file `{dataset_dir}`"
+            )
 
-        cfg = config.clone()
-        cfg.defrost()
-        cfg.CONTENT_SCENES = []
-        dataset = cls(cfg)
-        has_individual_scene_files = os.path.exists(
-            dataset.content_scenes_path.split("{scene}")[0].format(
-                data_path=dataset_dir
-            )
-        )
-        if has_individual_scene_files:
-            return cls._get_scenes_from_folder(
-                content_scenes_path=dataset.content_scenes_path,
-                dataset_dir=dataset_dir,
-            )
-        else:
-            # Load the full dataset, things are not split into separate files
-            cfg.CONTENT_SCENES = [ALL_SCENES_MASK]
+        cfg = config.copy()
+        with read_write(cfg):
+            cfg.content_scenes = []
             dataset = cls(cfg)
-            return list(map(cls.scene_from_scene_path, dataset.scene_ids))
+            has_individual_scene_files = os.path.exists(
+                dataset.content_scenes_path.split("{scene}")[0].format(
+                    data_path=dataset_dir
+                )
+            )
+            if has_individual_scene_files:
+                return cls._get_scenes_from_folder(
+                    content_scenes_path=dataset.content_scenes_path,
+                    dataset_dir=dataset_dir,
+                )
+            else:
+                # Load the full dataset, things are not split into separate files
+                cfg.content_scenes = [ALL_SCENES_MASK]
+                dataset = cls(cfg)
+                return list(map(cls.scene_from_scene_path, dataset.scene_ids))
 
     @staticmethod
     def _get_scenes_from_folder(
@@ -83,15 +90,23 @@ class PointNavDatasetV1(Dataset):
         scenes.sort()
         return scenes
 
-    def __init__(self, config: Optional[Config] = None) -> None:
+    def _load_from_file(self, fname: str, scenes_dir: str) -> None:
+        """
+        Load the data from a file into `self.episodes`.
+        """
+
+        with gzip.open(fname, "rt") as f:
+            self.from_json(f.read(), scenes_dir=scenes_dir)
+
+    def __init__(self, config: Optional["DictConfig"] = None) -> None:
         self.episodes = []
 
         if config is None:
             return
 
-        datasetfile_path = config.DATA_PATH.format(split=config.SPLIT)
-        with gzip.open(datasetfile_path, "rt") as f:
-            self.from_json(f.read(), scenes_dir=config.SCENES_DIR)
+        datasetfile_path = config.data_path.format(split=config.split)
+
+        self._load_from_file(datasetfile_path, config.scenes_dir)
 
         # Read separate file for each scene
         dataset_dir = os.path.dirname(datasetfile_path)
@@ -101,7 +116,7 @@ class PointNavDatasetV1(Dataset):
             )
         )
         if has_individual_scene_files:
-            scenes = config.CONTENT_SCENES
+            scenes = config.content_scenes
             if ALL_SCENES_MASK in scenes:
                 scenes = self._get_scenes_from_folder(
                     content_scenes_path=self.content_scenes_path,
@@ -112,8 +127,8 @@ class PointNavDatasetV1(Dataset):
                 scene_filename = self.content_scenes_path.format(
                     data_path=dataset_dir, scene=scene
                 )
-                with gzip.open(scene_filename, "rt") as f:
-                    self.from_json(f.read(), scenes_dir=config.SCENES_DIR)
+
+                self._load_from_file(scene_filename, config.scenes_dir)
 
         else:
             self.episodes = list(

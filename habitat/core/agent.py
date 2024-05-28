@@ -25,7 +25,7 @@ class Agent:
         raise NotImplementedError
 
     def act(
-        self, observations: Observations
+        self, observations: "Observations"
     ) -> Union[int, str, Dict[str, Any]]:
         r"""Called to produce an action to perform in an environment.
 

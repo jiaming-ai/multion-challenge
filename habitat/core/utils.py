@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 
-# Copyright (c) Facebook, Inc. and its affiliates.
+# Copyright (c) Meta Platforms, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
 import cmath
+import dataclasses
 import json
 import math
 from typing import Any, Dict, List, Optional
 
+import attr
 import numpy as np
 import quaternion  # noqa: F401
+from omegaconf import OmegaConf
 
 from habitat.utils.geometry_utils import quaternion_to_list
 
@@ -60,7 +63,7 @@ def tile_images(images: List[np.ndarray]) -> np.ndarray:
 
 
 def not_none_validator(
-    self: Any, attribute: Any, value: Optional[Any]
+    self: Any, attribute: attr.Attribute, value: Optional[Any]
 ) -> None:
     if value is None:
         raise ValueError(f"Argument '{attribute.name}' must be set")
@@ -113,18 +116,16 @@ def center_crop(obs, new_shape):
     return obs
 
 
-class DatasetFloatJSONEncoder(json.JSONEncoder):
-    r"""JSON Encoder that sets a float precision for a space saving purpose and
-    encodes ndarray and quaternion. The encoder is compatible with JSON
-    version 2.0.9.
-    """
-
+class DatasetJSONEncoder(json.JSONEncoder):
     def default(self, obj):
-        # JSON doesn't support numpy ndarray and quaternion
         if isinstance(obj, np.ndarray):
             return obj.tolist()
-        if isinstance(obj, np.quaternion):
+        if isinstance(obj, quaternion.quaternion):
             return quaternion_to_list(obj)
+        if OmegaConf.is_config(obj):
+            return OmegaConf.to_container(obj)
+        if dataclasses.is_dataclass(obj):
+            return dataclasses.asdict(obj)
 
         return (
             obj.__getstate__()
@@ -132,20 +133,28 @@ class DatasetFloatJSONEncoder(json.JSONEncoder):
             else obj.__dict__
         )
 
+
+class DatasetFloatJSONEncoder(DatasetJSONEncoder):
+    r"""JSON Encoder that sets a float precision for a space saving purpose and
+    encodes ndarray and quaternion. The encoder is compatible with JSON
+    version 2.0.9.
+    """
+
     # Overriding method to inject own `_repr` function for floats with needed
     # precision.
     def iterencode(self, o, _one_shot=False):
-
         markers: Optional[Dict] = {} if self.check_circular else None
         if self.ensure_ascii:
             _encoder = encode_basestring_ascii
         else:
             _encoder = encode_basestring
 
+        default_repr = lambda x: format(x, ".5f")
+
         def floatstr(
             o,
             allow_nan=self.allow_nan,
-            _repr=lambda x: format(x, ".5f"),
+            _repr=default_repr,
             _inf=math.inf,
             _neginf=-math.inf,
         ):

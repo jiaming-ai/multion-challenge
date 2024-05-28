@@ -1,0 +1,60 @@
+
+defaults:
+  - task_config_base
+  - actions:
+    - stop
+    - move_forward
+    - turn_left
+    - turn_right
+    #- look_up
+    #- look_down
+  - measurements:
+    #- distance_to_goal
+    - distance_to_currgoal
+    #- distance_to_currgoal_reward
+    - sub_success
+    #- distance_to_multi_goal
+    - success
+    - mspl
+    # - soft_spl
+    #- distance_to_goal_reward
+    #- top_down_map
+    - collisions
+    - episode_length
+    - progress
+    - ppl
+  - lab_sensors:
+    - multiobjectgoal_sensor
+    - compass_sensor
+    - gps_sensor
+    # - pointgoal_with_gps_compass_sensor
+    #- position_sensor
+    #- rotation_sensor
+    # - objnav_semantic_sensor
+    # - objmap_sensor
+  - _self_
+
+
+type: LangMultiObjectNav-v1
+end_on_success: True
+reward_measure: "distance_to_goal_reward"
+success_measure: "mspl"
+
+
+goal_sensor_uuid: multiobjectgoal
+
+measurements:
+  progress:
+    type: PercentageSuccess
+  sub_success:
+    success_distance: 1.5
+  distance_to_currgoal:
+    distance_to: VIEW_POINTS
+  #distance_to_currgoal_reward:
+   # type: DistanceToCurrGoalReward
+  #distance_to_multi_goal:
+   # distance_to: POINT
+  success:
+    success_distance: 1.5
+  #top_down_map:
+   # draw_goal_aabbs: False

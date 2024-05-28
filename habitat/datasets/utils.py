@@ -12,9 +12,7 @@ import os
 import re
 import typing
 from collections import Counter
-from typing import Iterable, List, Union
-
-from numpy import float64
+from typing import Iterable, List
 
 from habitat.core.logging import logger
 from habitat.core.simulator import ShortestPathPoint
@@ -182,7 +180,7 @@ class VocabFromText(VocabDict):
 def get_action_shortest_path(
     sim: "HabitatSim",
     source_position: List[float],
-    source_rotation: List[Union[int, float64]],
+    source_rotation: List[float],
     goal_position: List[float],
     success_distance: float = 0.05,
     max_episode_steps: int = 500,
@@ -195,7 +193,7 @@ def get_action_shortest_path(
     step_count = 0
     action = follower.get_next_action(goal_position)
     while (
-        action is not HabitatSimActions.STOP and step_count < max_episode_steps
+        action is not HabitatSimActions.stop and step_count < max_episode_steps
     ):
         state = sim.get_agent_state()
         shortest_path.append(
@@ -218,7 +216,7 @@ def check_and_gen_physics_config():
     if os.path.exists(DEFAULT_PHYSICS_CONFIG_PATH):
         return
     #  Config is sourced from
-    #  https://github.com/facebookresearch/habitat-sim/blob/master/data/default.physics_config.json
+    #  https://github.com/facebookresearch/habitat-sim/blob/main/data/default.physics_config.json
     physics_config = {
         "physics_simulator": "bullet",
         "timestep": 0.008,

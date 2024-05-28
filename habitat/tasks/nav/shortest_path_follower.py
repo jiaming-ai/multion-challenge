@@ -5,16 +5,18 @@
 # LICENSE file in the root directory of this source tree.
 
 import warnings
-from typing import Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 import numpy as np
 
 import habitat_sim
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
-from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
+
+if TYPE_CHECKING:
+    from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 
 
-def action_to_one_hot(action: int) -> np.array:
+def action_to_one_hot(action: int) -> np.ndarray:
     one_hot = np.zeros(len(HabitatSimActions), dtype=np.float32)
     one_hot[action] = 1
     return one_hot
@@ -37,12 +39,11 @@ class ShortestPathFollower:
 
     def __init__(
         self,
-        sim: HabitatSim,
+        sim: "HabitatSim",
         goal_radius: float,
         return_one_hot: bool = True,
         stop_on_error: bool = True,
     ):
-
         self._return_one_hot = return_one_hot
         self._sim = sim
         self._goal_radius = goal_radius
@@ -51,26 +52,26 @@ class ShortestPathFollower:
         self._stop_on_error = stop_on_error
 
     def _build_follower(self):
-        if self._current_scene != self._sim.habitat_config.SCENE:
+        if self._current_scene != self._sim.habitat_config.scene:
             self._follower = self._sim.make_greedy_follower(
                 0,
                 self._goal_radius,
-                stop_key=HabitatSimActions.STOP,
-                forward_key=HabitatSimActions.MOVE_FORWARD,
-                left_key=HabitatSimActions.TURN_LEFT,
-                right_key=HabitatSimActions.TURN_RIGHT,
+                stop_key=HabitatSimActions.stop,
+                forward_key=HabitatSimActions.move_forward,
+                left_key=HabitatSimActions.turn_left,
+                right_key=HabitatSimActions.turn_right,
             )
-            self._current_scene = self._sim.habitat_config.SCENE
+            self._current_scene = self._sim.habitat_config.scene
 
-    def _get_return_value(self, action) -> Union[int, np.array]:
+    def _get_return_value(self, action) -> Union[int, np.ndarray]:
         if self._return_one_hot:
             return action_to_one_hot(action)
         else:
             return action
 
     def get_next_action(
-        self, goal_pos: np.array
-    ) -> Optional[Union[int, np.array]]:
+        self, goal_pos: Union[List[float], np.ndarray]
+    ) -> Optional[Union[int, np.ndarray]]:
         """Returns the next action along the shortest path."""
         self._build_follower()
         assert self._follower is not None
@@ -78,7 +79,7 @@ class ShortestPathFollower:
             next_action = self._follower.next_action_along(goal_pos)
         except habitat_sim.errors.GreedyFollowerError as e:
             if self._stop_on_error:
-                next_action = HabitatSimActions.STOP
+                next_action = HabitatSimActions.stop
             else:
                 raise e
 

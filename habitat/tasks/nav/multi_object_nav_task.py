@@ -17,7 +17,7 @@ import magnum as mn
 import math
 
 import habitat_sim
-from habitat.config import Config
+#from habitat.config import Config
 from habitat.core.dataset import Dataset
 from habitat.core.logging import logger
 from habitat.core.registry import registry
@@ -192,17 +192,17 @@ class MultiObjectGoalSensor(Sensor):
 
     def _get_observation_space(self, *args: Any, **kwargs: Any):
         sensor_shape = (1,)
-        max_value = (self.config.GOAL_SPEC_MAX_VAL - 1,)
-        if self.config.GOAL_SPEC == "CATEGORY_LABEL_TEXT":
+        max_value = (self.config.goal_spec_max_val - 1,)
+        if self.config.goal_spec == "CATEGORY_LABEL_TEXT":
             return spaces.Text(255)
-        elif self.config.GOAL_SPEC == "TASK_CATEGORY_ID":
+        elif self.config.goal_spec == "TASK_CATEGORY_ID":
             max_value = max(
                 self._dataset.category_to_task_category_id.values()
             )
 
-            return spaces.Box(
-                low=0, high=max_value, shape=sensor_shape, dtype=np.int64
-            )
+        return spaces.Box(
+           low=0, high=max_value, shape=sensor_shape, dtype=np.int64
+        )
 
     def get_observation(
             self,
@@ -211,7 +211,7 @@ class MultiObjectGoalSensor(Sensor):
             episode: MultiObjectGoalNavEpisode,
             **kwargs: Any,
     ) -> Optional[int]:
-        if self.config.GOAL_SPEC == "CATEGORY_LABEL_TEXT":
+        if self.config.goal_spec == "CATEGORY_LABEL_TEXT":
             if len(episode.goals) == 0:
                 logger.error(
                     f"No goal specified for episode {episode.episode_id}."
@@ -219,13 +219,13 @@ class MultiObjectGoalSensor(Sensor):
                 return None
             curr_goal_ind = (kwargs["task"].current_goal_index
                              if kwargs["task"].current_goal_index < len(episode.goals) else -1)
-            if curr_goal_ind != -1 and 'action' in kwargs and kwargs['action']['action'] == 'FOUND':
+            if curr_goal_ind != -1 and 'action' in kwargs and kwargs['action']['action'] == 'stop':
                 curr_goal_ind += 1
             if curr_goal_ind == len(episode.goals):
                 curr_goal_ind = -1
             category_label = episode.goals[curr_goal_ind].language_instruction
             return category_label
-        elif self.config.GOAL_SPEC == "TASK_CATEGORY_ID":
+        elif self.config.goal_spec == "TASK_CATEGORY_ID":
             if len(episode.goals) == 0:
                 logger.error(
                     f"No goal specified for episode {episode.episode_id}."
@@ -254,3 +254,7 @@ class MultiObjectNavigationTask(NavigationTask):
     ) -> None:
         super().__init__(config=config, sim=sim, dataset=dataset)
         self.current_goal_index=0
+        
+    def reset(self, episode):
+        self.current_goal_index=0
+        return super().reset(episode)

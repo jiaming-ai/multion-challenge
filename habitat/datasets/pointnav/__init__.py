@@ -8,7 +8,7 @@ from habitat.core.dataset import Dataset
 from habitat.core.registry import registry
 
 
-# TODO(akadian): This is a result of moving SimulatorActions away from core
+# This is a result of moving SimulatorActions away from core
 # and into simulators specifically. As a result of that the connection points
 # for our tasks and datasets for actions is coming from inside habitat-sim
 # which makes it impossible for anyone to use habitat-lab without having
@@ -24,7 +24,7 @@ def _try_register_pointnavdatasetv1():
     except ImportError as e:
         pointnav_import_error = e
 
-        @registry.register_dataset(name="MultiObjectNav-v1")
+        @registry.register_dataset(name="PointNav-v1")
         class PointnavDatasetImportError(Dataset):
             def __init__(self, *args, **kwargs):
                 raise pointnav_import_error

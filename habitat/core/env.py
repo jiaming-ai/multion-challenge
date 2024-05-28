@@ -1,35 +1,40 @@
 #!/usr/bin/env python3
 
-# Copyright (c) Facebook, Inc. and its affiliates.
+# Copyright (c) Meta Platforms, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
 import random
 import time
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, cast
-import pickle
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+)
+
 import gym
 import numba
 import numpy as np
 from gym import spaces
-from scipy import ndimage
-import math
 
-from habitat.config import Config
-from habitat.core.dataset import Dataset, Episode, EpisodeIterator
+from habitat.config import read_write
+from habitat.core.dataset import BaseEpisode, Dataset, Episode, EpisodeIterator
 from habitat.core.embodied_task import EmbodiedTask, Metrics
 from habitat.core.simulator import Observations, Simulator
 from habitat.datasets import make_dataset
 from habitat.sims import make_sim
-from habitat_sim.nav import NavMeshSettings
-from habitat.tasks import make_task
+from habitat.tasks.registration import make_task
 from habitat.utils import profiling_wrapper
-import habitat_sim
-import magnum
 
-COORDINATE_EPSILON = 1e-6
-COORDINATE_MIN = -62.3241 - COORDINATE_EPSILON
-COORDINATE_MAX = 90.0399 + COORDINATE_EPSILON
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
+
 
 class Env:
     r"""Fundamental environment class for :ref:`habitat`.
@@ -47,13 +52,11 @@ class Env:
 
     observation_space: spaces.Dict
     action_space: spaces.Dict
-    _config: Config
-    _dataset: Optional[Dataset]
+    _config: "DictConfig"
+    _dataset: Optional[Dataset[Episode]]
     number_of_episodes: Optional[int]
-    _episodes: List[Episode]
-    _current_episode_index: Optional[int]
     _current_episode: Optional[Episode]
-    _episode_iterator: Optional[Iterator]
+    _episode_iterator: Optional[Iterator[Episode]]
     _sim: Simulator
     _task: EmbodiedTask
     _max_episode_seconds: int
@@ -61,9 +64,11 @@ class Env:
     _elapsed_steps: int
     _episode_start_time: Optional[float]
     _episode_over: bool
+    _episode_from_iter_on_reset: bool
+    _episode_force_changed: bool
 
     def __init__(
-        self, config: Config, dataset: Optional[Dataset] = None
+        self, config: "DictConfig", dataset: Optional[Dataset[Episode]] = None
     ) -> None:
         """Constructor
 
@@ -75,56 +80,44 @@ class Env:
             ``_episodes`` should be populated from outside.
         """
 
-        assert config.is_frozen(), (
-            "Freeze the config before creating the "
-            "environment, use config.freeze()."
-        )
+        if "habitat" in config:
+            config = config.habitat
         self._config = config
         self._dataset = dataset
-        self._current_episode_index = None
-        if self._dataset is None and config.DATASET.TYPE:
+        if self._dataset is None and config.dataset.type:
             self._dataset = make_dataset(
-                id_dataset=config.DATASET.TYPE, config=config.DATASET
+                id_dataset=config.dataset.type, config=config.dataset
             )
-        self._episodes = (
-            self._dataset.episodes
-            if self._dataset
-            else cast(List[Episode], [])
-        )
+
         self._current_episode = None
-        iter_option_dict = {
-            k.lower(): v
-            for k, v in config.ENVIRONMENT.ITERATOR_OPTIONS.items()
-        }
-        iter_option_dict["seed"] = config.SEED
-        self._episode_iterator = self._dataset.get_episode_iterator(
-            **iter_option_dict
-        )
+        self._episode_iterator = None
+        self._episode_from_iter_on_reset = True
+        self._episode_force_changed = False
 
         # load the first scene if dataset is present
         if self._dataset:
             assert (
                 len(self._dataset.episodes) > 0
             ), "dataset should have non-empty episodes list"
-            self._config.defrost()
-            self._config.SIMULATOR.SCENE = self._dataset.episodes[0].scene_id
-            self._config.freeze()
+            self._setup_episode_iterator()
+            self.current_episode = next(self.episode_iterator)
+            with read_write(self._config):
+                self._config.simulator.scene_dataset = (
+                    self.current_episode.scene_dataset_config
+                )
+                self._config.simulator.scene = self.current_episode.scene_id
 
-            self.number_of_episodes = len(self._dataset.episodes)
+            self.number_of_episodes = len(self.episodes)
         else:
             self.number_of_episodes = None
 
         self._sim = make_sim(
-            id_sim=self._config.SIMULATOR.TYPE, config=self._config.SIMULATOR
+            id_sim=self._config.simulator.type, config=self._config.simulator
         )
-        self.setting = NavMeshSettings()
-        self.setting.agent_radius = 0.18
-        self.setting.agent_height = 0.88
-        self.setting.include_static_objects = True
-        self._sim.recompute_navmesh(self._sim.pathfinder, self.setting)
+
         self._task = make_task(
-            self._config.TASK.TYPE,
-            config=self._config.TASK,
+            self._config.task.type,
+            config=self._config.task,
             sim=self._sim,
             dataset=self._dataset,
         )
@@ -136,12 +129,23 @@ class Env:
         )
         self.action_space = self._task.action_space
         self._max_episode_seconds = (
-            self._config.ENVIRONMENT.MAX_EPISODE_SECONDS
+            self._config.environment.max_episode_seconds
         )
-        self._max_episode_steps = self._config.ENVIRONMENT.MAX_EPISODE_STEPS
+        self._max_episode_steps = self._config.environment.max_episode_steps
         self._elapsed_steps = 0
         self._episode_start_time: Optional[float] = None
         self._episode_over = False
+
+    def _setup_episode_iterator(self):
+        assert self._dataset is not None
+        iter_option_dict = {
+            k.lower(): v
+            for k, v in self._config.environment.iterator_options.items()
+        }
+        iter_option_dict["seed"] = self._config.seed
+        self._episode_iterator = self._dataset.get_episode_iterator(
+            **iter_option_dict
+        )
 
     @property
     def current_episode(self) -> Episode:
@@ -151,25 +155,42 @@ class Env:
     @current_episode.setter
     def current_episode(self, episode: Episode) -> None:
         self._current_episode = episode
+        # This allows the current episode to be set here
+        # and then reset be called without the episode changing
+        self._episode_from_iter_on_reset = False
+        self._episode_force_changed = True
 
     @property
-    def episode_iterator(self) -> Iterator:
+    def episode_iterator(self) -> Iterator[Episode]:
         return self._episode_iterator
 
     @episode_iterator.setter
-    def episode_iterator(self, new_iter: Iterator) -> None:
+    def episode_iterator(self, new_iter: Iterator[Episode]) -> None:
         self._episode_iterator = new_iter
+        self._episode_force_changed = True
+        self._episode_from_iter_on_reset = True
 
     @property
     def episodes(self) -> List[Episode]:
-        return self._episodes
+        return (
+            self._dataset.episodes
+            if self._dataset
+            else cast(List[Episode], [])
+        )
 
     @episodes.setter
     def episodes(self, episodes: List[Episode]) -> None:
         assert (
             len(episodes) > 0
         ), "Environment doesn't accept empty episodes list."
-        self._episodes = episodes
+        assert (
+            self._dataset is not None
+        ), "Environment must have a dataset to set episodes"
+        self._dataset.episodes = episodes
+        self._setup_episode_iterator()
+        self._current_episode = None
+        self._episode_force_changed = True
+        self._episode_from_iter_on_reset = True
 
     @property
     def sim(self) -> Simulator:
@@ -198,44 +219,19 @@ class Env:
         return self._task.measurements.get_metrics()
 
     def _past_limit(self) -> bool:
-        if (
+        return (
             self._max_episode_steps != 0
             and self._max_episode_steps <= self._elapsed_steps
-        ):
-            return True
-        elif (
+        ) or (
             self._max_episode_seconds != 0
             and self._max_episode_seconds <= self._elapsed_seconds
-        ):
-            return True
-        return False
+        )
 
     def _reset_stats(self) -> None:
         self._episode_start_time = time.time()
         self._elapsed_steps = 0
         self._episode_over = False
-    
-    def conv_grid(
-        self,
-        realworld_x,
-        realworld_y,
-        coordinate_min = COORDINATE_MIN,
-        coordinate_max = COORDINATE_MAX,
-        grid_resolution = (300, 300)
-    ):
-        r"""Return gridworld index of realworld coordinates assuming top-left corner
-        is the origin. The real world coordinates of lower left corner are
-        (coordinate_min, coordinate_min) and of top right corner are
-        (coordinate_max, coordinate_max)
-        """
-        grid_size = (
-            (coordinate_max - coordinate_min) / grid_resolution[0],
-            (coordinate_max - coordinate_min) / grid_resolution[1],
-        )
-        grid_x = int((coordinate_max - realworld_x) / grid_size[0])
-        grid_y = int((realworld_y - coordinate_min) / grid_size[1])
-        return grid_x, grid_y
-    
+
     def reset(self) -> Observations:
         r"""Resets the environments and returns the initial observations.
 
@@ -243,96 +239,33 @@ class Env:
         """
         self._reset_stats()
 
-        assert len(self.episodes) > 0, "Episodes list is empty"
         # Delete the shortest path cache of the current episode
         # Caching it for the next time we see this episode isn't really worth
         # it
         if self._current_episode is not None:
             self._current_episode._shortest_path_cache = None
 
-        self._current_episode = next(self._episode_iterator)
+        if (
+            self._episode_iterator is not None
+            and self._episode_from_iter_on_reset
+        ):
+            self._current_episode = next(self._episode_iterator)
+
+        # This is always set to true after a reset that way
+        # on the next reset an new episode is taken (if possible)
+        self._episode_from_iter_on_reset = True
+        self._episode_force_changed = False
+
+        assert self._current_episode is not None, "Reset requires an episode"
         self.reconfigure(self._config)
-        self._sim.recompute_navmesh(self._sim.pathfinder, self.setting)
-        
-        rigid_obj_mgr = self._sim.get_rigid_object_manager()
-        self.object_to_datset_mapping = self._dataset.category_to_task_category_id
-        # Remove existing objects from last episode
-        rigid_obj_mgr.remove_all_objects()
 
-        # Insert current episode objects
-        obj_path = self._config.TASK.OBJECTS_PATH
-
-        obj_templates_mgr = self._sim.get_object_template_manager()
-        obj_templates_mgr.load_configs(obj_path, True)
-
-        #for i in range(len(self.current_episode.goals)):
-         #   current_goal = self.current_episode.goals[i].object_category
-          #  object_id = self.current_episode.goals[i].object_id
-           # dataset_index = self.object_to_datset_mapping[current_goal]
-
-            ## obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
-            #obj_handle_list = obj_templates_mgr.get_template_handles(object_id)[0]
-            #object_box = rigid_obj_mgr.add_object_by_template_handle(obj_handle_list)
-            #obj_node = object_box.root_scene_node
-            #obj_bb = obj_node.cumulative_bb
-            #jj = obj_bb.back_bottom_left
-            #jj = [jj[0], jj[2], jj[1]]
-            #diff = np.array(self.current_episode.goals[i].position)
-            #diff2 = diff - jj
-            #diff2[2] += jj[2] * 2
-            #diff2[1] += 0.05
-            #object_box.semantic_id = dataset_index
-            #object_box.translation = np.array(diff2)
-            #object_box.rotate_x(magnum.Rad(-1.5708))
-
-        '''
-        # Remove existing objects from last episode
-        for objid in self._sim.get_existing_object_ids():
-            self._sim.remove_object(objid)
-
-        # Insert object here
-        obj_type = self._config["TASK"]["OBJECTS_TYPE"]
-        if obj_type == "CYL":
-            object_to_datset_mapping = {'cylinder_red':0, 'cylinder_green':1, 'cylinder_blue':2, 'cylinder_yellow':3, 'cylinder_white':4, 'cylinder_pink':5, 'cylinder_black':6, 'cylinder_cyan':7}
-        else:
-            object_to_datset_mapping = {'guitar':0, 'electric_piano':1, 'basket_ball':2,'toy_train':3, 'teddy_bear':4, 'rocking_horse':5, 'backpack': 6, 'trolley_bag':7}
-            
-            
-        for i in range(len(self.current_episode.goals)):
-            current_goal = self.current_episode.goals[i].object_category
-            dataset_index = object_to_datset_mapping[current_goal]
-            ind = self._sim.add_object(dataset_index)
-            self._sim.set_translation(np.array(self.current_episode.goals[i].position), ind)
-            
-            # random rotation only on the Y axis
-            y_rotation = mn.Quaternion.rotation(
-                mn.Rad(random.random() * 2 * math.pi), mn.Vector3(0, 1.0, 0)
-            )
-            self._sim.set_rotation(y_rotation, ind)
-            self._sim.set_object_motion_type(habitat_sim.physics.MotionType.STATIC, ind)
-
-        if self._config["TASK"]["INCLUDE_DISTRACTORS"]:
-            for i in range(len(self.current_episode.distractors)):
-                current_distractor = self.current_episode.distractors[i].object_category
-                dataset_index = object_to_datset_mapping[current_distractor]
-                ind = self._sim.add_object(dataset_index)
-                self._sim.set_translation(np.array(self.current_episode.distractors[i].position), ind)
-                
-                # random rotation only on the Y axis
-                y_rotation = mn.Quaternion.rotation(
-                    mn.Rad(random.random() * 2 * math.pi), mn.Vector3(0, 1.0, 0)
-                )
-                self._sim.set_rotation(y_rotation, ind)
-                self._sim.set_object_motion_type(habitat_sim.physics.MotionType.STATIC, ind)
-        '''
         observations = self.task.reset(episode=self.current_episode)
-        
         self._task.measurements.reset_measures(
             episode=self.current_episode,
             task=self.task,
             observations=observations,
         )
-            
+
         return observations
 
     def _update_step_stats(self) -> None:
@@ -365,13 +298,80 @@ class Env:
         assert (
             self._episode_over is False
         ), "Episode over, call reset before calling step"
+        assert (
+            not self._episode_force_changed
+        ), "Episode was changed either by setting current_episode or changing the episodes list. Call reset before stepping the environment again."
 
-        self.task.is_found_called = bool(action == 0)
-        
         # Support simpler interface as well
         if isinstance(action, (str, int, np.integer)):
             action = {"action": action}
-            
+
+        observations = self.task.step(
+            action=action, episode=self.current_episode
+        )
+
+        self._task.measurements.update_measures(
+            episode=self.current_episode,
+            action=action,
+            task=self.task,
+            observations=observations,
+        )
+
+        self._update_step_stats()
+
+        return observations
+
+    @staticmethod
+    @numba.njit
+    def _seed_numba(seed: int):
+        random.seed(seed)
+        np.random.seed(seed)
+
+    def seed(self, seed: int) -> None:
+        random.seed(seed)
+        np.random.seed(seed)
+        self._seed_numba(seed)
+        self._sim.seed(seed)
+        self._task.seed(seed)
+
+    def reconfigure(self, config: "DictConfig") -> None:
+        self._config = self._task.overwrite_sim_config(
+            config, self.current_episode
+        )
+
+        self._sim.reconfigure(self._config.simulator, self.current_episode)
+
+    def render(self, mode="rgb") -> np.ndarray:
+        return self._sim.render(mode)
+
+    def close(self) -> None:
+        self._sim.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+class LangMONEnv(Env):
+    def step(
+        self, action: Union[int, str, Dict[str, Any]], **kwargs
+    ) -> Observations:
+        assert (
+                self._episode_start_time is not None
+        ), "Cannot call step before calling reset"
+        assert (
+                self._episode_over is False
+        ), "Episode over, call reset before calling step"
+        assert (
+            not self._episode_force_changed
+        ), "Episode was changed either by setting current_episode or changing the episodes list. Call reset before stepping the environment again."
+
+        # Support simpler interface as well
+        if isinstance(action, (str, int, np.integer)):
+            action = {"action": action}
+
         observations = self.task.step(
             action=action, episode=self.current_episode
         )
@@ -418,47 +418,10 @@ class Env:
         if self.get_metrics()['mspl']:
             self.task._is_episode_active = False
             self._episode_over = True
-            
+
         self._update_step_stats()
 
         return observations
-    
-    @staticmethod
-    @numba.njit
-    def _seed_numba(seed: int):
-        random.seed(seed)
-        np.random.seed(seed)
-
-    def seed(self, seed: int) -> None:
-        random.seed(seed)
-        np.random.seed(seed)
-        self._seed_numba(seed)
-        self._sim.seed(seed)
-        self._task.seed(seed)
-
-    def reconfigure(self, config: Config) -> None:
-        self._config = config
-
-        self._config.defrost()
-        self._config.SIMULATOR = self._task.overwrite_sim_config(
-            self._config.SIMULATOR, self.current_episode
-        )
-        self._config.freeze()
-
-        self._sim.reconfigure(self._config.SIMULATOR)
-
-    def render(self, mode="rgb") -> np.ndarray:
-        return self._sim.render(mode)
-
-    def close(self) -> None:
-        self._sim.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-
 
 class RLEnv(gym.Env):
     r"""Reinforcement Learning (RL) environment class which subclasses ``gym.Env``.
@@ -475,19 +438,25 @@ class RLEnv(gym.Env):
     _env: Env
 
     def __init__(
-        self, config: Config, dataset: Optional[Dataset] = None
+        self, config: "DictConfig", dataset: Optional[Dataset] = None
     ) -> None:
         """Constructor
 
         :param config: config to construct :ref:`Env`
         :param dataset: dataset to construct :ref:`Env`.
         """
-
+        if "habitat" in config:
+            config = config.habitat
+        self._core_env_config = config
         self._env = Env(config, dataset)
         self.observation_space = self._env.observation_space
         self.action_space = self._env.action_space
         self.number_of_episodes = self._env.number_of_episodes
         self.reward_range = self.get_reward_range()
+
+    @property
+    def config(self) -> "DictConfig":
+        return self._core_env_config
 
     @property
     def habitat_env(self) -> Env:
@@ -501,13 +470,31 @@ class RLEnv(gym.Env):
     def episodes(self, episodes: List[Episode]) -> None:
         self._env.episodes = episodes
 
-    @property
-    def current_episode(self) -> Episode:
-        return self._env.current_episode
+    def current_episode(self, all_info: bool = False) -> BaseEpisode:
+        r"""Returns the current episode of the environment.
+
+        :param all_info: If true, all the information in the episode
+                         will be provided. Otherwise, only episode_id
+                         and scene_id will be included.
+        :return: The BaseEpisode object for the current episode.
+        """
+        if all_info:
+            return self._env.current_episode
+        else:
+            return BaseEpisode(
+                episode_id=self._env.current_episode.episode_id,
+                scene_id=self._env.current_episode.scene_id,
+            )
 
     @profiling_wrapper.RangeContext("RLEnv.reset")
-    def reset(self) -> Observations:
-        return self._env.reset()
+    def reset(
+        self, *, return_info: bool = False, **kwargs
+    ) -> Union[Observations, Tuple[Observations, Dict]]:
+        observations = self._env.reset()
+        if return_info:
+            return observations, self.get_info(observations)
+        else:
+            return observations
 
     def get_reward_range(self):
         r"""Get min, max range of reward.
@@ -553,7 +540,7 @@ class RLEnv(gym.Env):
         """
 
         observations = self._env.step(*args, **kwargs)
-        reward = self.get_reward(observations, **kwargs)
+        reward = self.get_reward(observations)
         done = self.get_done(observations)
         info = self.get_info(observations)
 

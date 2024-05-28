@@ -3,6 +3,7 @@ FROM soniaraychau/multion-challenge:starter_2024
 ADD evaluate.py /multion-chal-starter
 ADD submit.sh /multion-chal-starter
 ADD configs /multion-chal-starter/configs
+ADD multion /multion-chal-starter/multion
 
 ENV TRACK_CONFIG_FILE "/multion-chal-starter/configs/multinav.yaml"
 

@@ -9,11 +9,11 @@ r"""Implements dataset functionality to be used ``habitat.EmbodiedTask``.
 of a ``habitat.Agent`` inside ``habitat.Env``.
 """
 import copy
-import json
 import os
 import random
 from itertools import groupby
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -30,31 +30,49 @@ import attr
 import numpy as np
 from numpy import ndarray
 
-from habitat.config import Config
-from habitat.core.utils import not_none_validator
+from habitat.core.utils import DatasetJSONEncoder, not_none_validator
+
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
+
 
 ALL_SCENES_MASK = "*"
 
 
-@attr.s(auto_attribs=True, kw_only=True)
-class Episode:
-    r"""Base class for episode specification that includes initial position and
-    rotation of agent, scene id, episode.
-
+@attr.s(auto_attribs=True)
+class BaseEpisode:
+    """
+    Base class for episode specification that includes only the episode_id
+    and scene id. This class allows passing the minimum required episode
+    information to identify the episode (unique key) to the habitat baseline process, thus saving evaluation time.
     :property episode_id: id of episode in the dataset, usually episode number.
     :property scene_id: id of scene in dataset.
-    :property start_position: list of length 3 for cartesian coordinates
-        :py:`(x, y, z)`.
-    :property start_rotation: list of length 4 for (x, y, z, w) elements
-        of unit quaternion (versor) representing 3D agent orientation
-        (https://en.wikipedia.org/wiki/Versor). The rotation specifying the
-        agent's orientation is relative to the world coordinate axes.
-
-    This information is provided by a :ref:`Dataset` instance.
     """
 
     episode_id: str = attr.ib(default=None, validator=not_none_validator)
     scene_id: str = attr.ib(default=None, validator=not_none_validator)
+
+
+@attr.s(auto_attribs=True, kw_only=True)
+class Episode(BaseEpisode):
+    r"""Base class for episode specification that includes initial position and
+    rotation of agent, scene id, episode.
+    :property start_position: list of length 3 for cartesian coordinates `(x, y, z)`
+    :property start_rotation: list of length 4 for (x, y, z, w) elements
+    of unit quaternion (versor) representing 3D agent orientation
+    (https://en.wikipedia.org/wiki/Versor). The rotation specifying the
+    agent's orientation is relative to the world coordinate axes.
+
+    This information is provided by a :ref:`Dataset` instance.
+    """
+    # path to the SceneDataset config file
+    scene_dataset_config: str = attr.ib(
+        default="default", validator=not_none_validator
+    )
+    # list of paths to search for object config files in addition to the SceneDataset
+    additional_obj_config_paths: List[str] = attr.ib(
+        default=[], validator=not_none_validator
+    )
     start_position: List[float] = attr.ib(
         default=None, validator=not_none_validator
     )
@@ -63,6 +81,16 @@ class Episode:
     )
     info: Optional[Dict[str, Any]] = None
     _shortest_path_cache: Any = attr.ib(init=False, default=None)
+
+    # NB: This method is marked static despite taking self so that
+    # on_setattr=Episode._reset_shortest_path_cache_hook works as attrs
+    # will pass the instance as the first argument!
+    @staticmethod
+    def _reset_shortest_path_cache_hook(
+        self: "Episode", attribute: attr.Attribute, value: Any
+    ) -> Any:
+        self._shortest_path_cache = None
+        return value
 
     def __getstate__(self):
         return {
@@ -95,7 +123,7 @@ class Dataset(Generic[T]):
         return os.path.splitext(os.path.basename(scene_path))[0]
 
     @classmethod
-    def get_scenes_to_load(cls, config: Config) -> List[str]:
+    def get_scenes_to_load(cls, config: "DictConfig") -> List[str]:
         r"""Returns a list of scene names that would be loaded with this dataset.
 
         Useful for determining what scenes to split up among different workers.
@@ -111,9 +139,9 @@ class Dataset(Generic[T]):
     @classmethod
     def build_content_scenes_filter(cls, config) -> Callable[[T], bool]:
         r"""Returns a filter function that takes an episode and returns True if that
-        episode is valid under the CONTENT_SCENES feild of the provided config
+        episode is valid under the content_scenes feild of the provided config
         """
-        scenes_to_load = set(config.CONTENT_SCENES)
+        scenes_to_load = set(config.content_scenes)
 
         def _filter(ep: T) -> bool:
             return (
@@ -151,7 +179,7 @@ class Dataset(Generic[T]):
         """
         return [self.episodes[episode_id] for episode_id in indexes]
 
-    def get_episode_iterator(self, *args: Any, **kwargs: Any) -> Iterator:
+    def get_episode_iterator(self, *args: Any, **kwargs: Any) -> Iterator[T]:
         r"""Gets episode iterator with options. Options are specified in
         :ref:`EpisodeIterator` documentation.
 
@@ -166,17 +194,6 @@ class Dataset(Generic[T]):
         return EpisodeIterator(self.episodes, *args, **kwargs)
 
     def to_json(self) -> str:
-        class DatasetJSONEncoder(json.JSONEncoder):
-            def default(self, obj):
-                if isinstance(obj, np.ndarray):
-                    return obj.tolist()
-
-                return (
-                    obj.__getstate__()
-                    if hasattr(obj, "__getstate__")
-                    else obj.__dict__
-                )
-
         result = DatasetJSONEncoder().encode(self)
         return result
 
@@ -280,7 +297,7 @@ class Dataset(Generic[T]):
 
         rand_items = np.random.choice(
             self.num_episodes, num_episodes, replace=False
-        )
+        ).tolist()
         if collate_scene_ids:
             scene_ids: Dict[str, List[int]] = {}
             for rand_ind in rand_items:
@@ -307,7 +324,7 @@ class Dataset(Generic[T]):
         return new_datasets
 
 
-class EpisodeIterator(Iterator):
+class EpisodeIterator(Iterator[T]):
     r"""Episode Iterator class that gives options for how a list of episodes
     should be iterated.
 
@@ -374,8 +391,8 @@ class EpisodeIterator(Iterator):
 
         # sample episodes
         if num_episode_sample >= 0:
-            episodes = np.random.choice(
-                episodes, num_episode_sample, replace=False
+            episodes = np.random.choice(  # type: ignore[assignment]
+                episodes, num_episode_sample, replace=False  # type: ignore[arg-type]
             )
 
         if not isinstance(episodes, list):
