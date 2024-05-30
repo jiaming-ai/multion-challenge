@@ -70,19 +70,18 @@ multion-challenge/
           scenes/
           ...
     datasets/
-        3_ON/
-            train/
-              content/
-                  ...
-              train.json.gz
-            minival/
-                content/
-                    ...
-                minival.json.gz
-            val/
-                content/
-                    ...
-                val.json.gz
+      train/
+        content/
+            ...
+        train.json.gz
+      minival/
+          content/
+              ...
+          minival.json.gz
+      val/
+          content/
+              ...
+          val.json.gz
 ```
 
 7. Test the docker container locally.
