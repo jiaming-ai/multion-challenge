@@ -411,7 +411,6 @@ class RLConfig(HabitatBaselinesBaseConfig):
     ddppo: DDPPOConfig = DDPPOConfig()
     ver: VERConfig = VERConfig()
     auxiliary_losses: Dict[str, AuxLossConfig] = field(default_factory=dict)
-    sem_map_policy: SemMapPolicyConfig = SemMapPolicyConfig()
 
 @dataclass
 class ProfilingConfig(HabitatBaselinesBaseConfig):
