@@ -830,20 +830,27 @@ class MSPL(Measure):
 
         self._start_end_episode_distance = 0
 
-        self.all_sps = calculate_episode_multigoal_sp(episode, self._sim)
-        start = sum([len(go.navigable_points) for ind in range(len(episode.goals) - 1) for go in episode.goals[ind].goal_object])
-        end = -1
-        self._start_end_episode_distance = min(self.all_sps[-1, start:end]).item()
-
-        # for goal_number in range(len(episode.goals) ):  # Find distances between successive goals and keep adding them
-        #   if goal_number == 0:
-        #      self._start_end_episode_distance += self._sim.geodesic_distance(
-        #         episode.start_position, episode.goals[0].position[0]
-        #    )
-        # else:
-        #   self._start_end_episode_distance += self._sim.geodesic_distance(
-        #      episode.goals[goal_number - 1].position[0], episode.goals[goal_number].position[0]
-        # )
+        for goal_number in range(len(episode.goals)):  # Find distances between successive goals and keep adding them
+            if goal_number == 0:
+                centr = [o.centroid for o in episode.goals[0].goal_object]
+                dists = [self._euclidean_distance(  #_sim.geodesic_distance
+                    episode.start_position, c
+                    )
+                    for c in centr
+                ]
+                selected_centr = np.argmin(dists).item()
+                self._start_end_episode_distance += dists[selected_centr]
+                previous_centr = centr[selected_centr]
+            else:
+                centr = [o.centroid for o in episode.goals[goal_number].goal_object]
+                dists = [self._euclidean_distance(  # _sim.geodesic_distance
+                    previous_centr, c
+                    )
+                    for c in centr
+                ]
+                selected_centr = np.argmin(dists).item()
+                self._start_end_episode_distance += dists[selected_centr]
+                previous_centr = centr[selected_centr]
         if self._start_end_episode_distance == float("inf"):
             logger.info(
                 '(MSPL) Inf value from sim.geodesic_distance between successive goals starting from the start_position. episode=')
@@ -907,18 +914,29 @@ class PPL(Measure):
         self._start_subgoal_episode_distance = []
         self._start_subgoal_agent_distance = []
 
-        self.all_sps = calculate_episode_multigoal_sp(episode, self._sim)
+        for goal_number in range(len(episode.goals)):  # Find distances between successive goals and keep adding them
+            if goal_number == 0:
+                centr = [o.centroid for o in episode.goals[0].goal_object]
+                dists = [self._euclidean_distance(  #_sim.geodesic_distance
+                    episode.start_position, c
+                    )
+                    for c in centr
+                ]
+                selected_centr = np.argmin(dists).item()
+                self._start_end_episode_distance += dists[selected_centr]
+                previous_centr = centr[selected_centr]
+            else:
+                centr = [o.centroid for o in episode.goals[goal_number].goal_object]
+                dists = [self._euclidean_distance(  # _sim.geodesic_distance
+                    previous_centr, c
+                    )
+                    for c in centr
+                ]
+                selected_centr = np.argmin(dists).item()
+                self._start_end_episode_distance += dists[selected_centr]
+                previous_centr = centr[selected_centr]
+            self._start_subgoal_episode_distance.append(self._start_end_episode_distance)
 
-        # for goal_number in range(len(episode.goals)):  # Find distances between successive goals and keep adding them
-        #   if goal_number == 0:
-        #      self._start_end_episode_distance += self._sim.geodesic_distance(
-        #         episode.start_position, episode.goals[0].position[0]
-        #    )
-        #   self._start_subgoal_episode_distance.append(self._start_end_episode_distance)
-        # else:
-        #   self._start_end_episode_distance += self._sim.geodesic_distance(
-        #      episode.goals[goal_number - 1].position[0], episode.goals[goal_number].position[0]
-        # )
         # self._start_subgoal_episode_distance.append(self._start_end_episode_distance)
         self._agent_episode_distance = 0.0
         self._metric = None
@@ -947,10 +965,7 @@ class PPL(Measure):
             self._start_subgoal_agent_distance.append(self._agent_episode_distance)
 
         if ep_percentage_success > 0:
-            start = sum([len(go.navigable_points) for ind in range(task.current_goal_index - 1) for go in episode.goals[ind].goal_object])
-            end = sum([len(go.navigable_points) for ind in range(task.current_goal_index - 1) for go in episode.goals[ind].goal_object]) + sum(
-                len(go.navigable_points) for go in episode.goals[task.current_goal_index - 1].goal_object)
-            sp_start_to_sgoal = min(self.all_sps[-1, start:end]).item()
+            sp_start_to_sgoal = self._start_subgoal_episode_distance[task.current_goal_index - 1]
 
             self._metric = ep_percentage_success * (
                     sp_start_to_sgoal
