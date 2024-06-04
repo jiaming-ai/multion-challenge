@@ -4,7 +4,6 @@ import numpy as np
 import habitat
 import os
 os.environ["CHALLENGE_CONFIG_FILE"] = "./configs/multinav.yaml"
-os.environ["AGENT_EVALUATION_TYPE"] = "local"
 
 class RandomWalker(habitat.Agent):
     def __init__(self, task_config: habitat.Config):
