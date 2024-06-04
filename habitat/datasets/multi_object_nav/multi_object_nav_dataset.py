@@ -8,7 +8,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from habitat.config import Config
+#from habitat.config import Config
 from habitat.core.registry import registry
 from habitat.datasets.pointnav.pointnav_dataset import (
     CONTENT_SCENES_PATH_FIELD,

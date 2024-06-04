@@ -7,15 +7,19 @@ r"""Implements tasks and measurements needed for training and benchmarking of
 ``habitat.Agent`` inside ``habitat.Env``.
 """
 
+import time
 from collections import OrderedDict
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Union
 
 import numpy as np
+from omegaconf import OmegaConf
 
-from habitat.config import Config
 from habitat.core.dataset import Dataset, Episode
 from habitat.core.simulator import Observations, SensorSuite, Simulator
 from habitat.core.spaces import ActionSpace, EmptySpace, Space
+
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
 
 
 class Action:
@@ -59,7 +63,7 @@ class SimulatorTaskAction(Action):
     """
 
     def __init__(
-        self, *args: Any, config: Config, sim: Simulator, **kwargs: Any
+        self, *args: Any, config: "DictConfig", sim: Simulator, **kwargs: Any
     ) -> None:
         self._config = config
         self._sim = sim
@@ -161,9 +165,12 @@ class Measurements:
         for measure in self.measures.values():
             measure.reset_metric(*args, **kwargs)
 
-    def update_measures(self, *args: Any, **kwargs: Any) -> None:
+    def update_measures(self, *args: Any, task, **kwargs: Any) -> None:
         for measure in self.measures.values():
-            measure.update_metric(*args, **kwargs)
+            t_start = time.time()
+            measure.update_metric(*args, task=task, **kwargs)
+            measure_name = measure._get_uuid(*args, task=task, **kwargs)
+            task.add_perf_timing(f"measures.{measure_name}", t_start)
 
     def get_metrics(self) -> Metrics:
         r"""Collects measurement from all :ref:`Measure`\ s and returns it
@@ -188,17 +195,17 @@ class Measurements:
             assert (
                 dependency_measure in self.measures
             ), f"""{measure_name} measure requires {dependency_measure}
-                listed in tje measures list in the config."""
+                listed in the measures list in the config."""
 
         for dependency_measure in dependencies:
             assert measure_index > self._get_measure_index(
                 dependency_measure
             ), f"""{measure_name} measure requires be listed after {dependency_measure}
-                in tje measures list in the config."""
+                in the measures list in the config."""
 
 
 class EmbodiedTask:
-    r"""Base class for embodied tasks. ``EmbodiedTask`` holds definition of
+    r"""Base class for embodied task. ``EmbodiedTask`` holds definition of
     a task that agent needs to solve: action space, observation space,
     measures, simulator usage. ``EmbodiedTask`` has :ref:`reset` and
     :ref:`step` methods that are called by ``Env``. ``EmbodiedTask`` is the
@@ -224,50 +231,57 @@ class EmbodiedTask:
     sensor_suite: SensorSuite
 
     def __init__(
-        self, config: Config, sim: Simulator, dataset: Optional[Dataset] = None
+        self,
+        config: "DictConfig",
+        sim: Simulator,
+        dataset: Optional[Dataset] = None,
     ) -> None:
         from habitat.core.registry import registry
 
         self._config = config
         self._sim = sim
         self._dataset = dataset
+        self._physics_target_sps = config.physics_target_sps
+        assert (
+            self._physics_target_sps > 0
+        ), "physics_target_sps must be positive"
 
         self.measurements = Measurements(
             self._init_entities(
-                entity_names=config.MEASUREMENTS,
+                entities_configs=config.measurements,
                 register_func=registry.get_measure,
-                entities_config=config,
             ).values()
         )
 
         self.sensor_suite = SensorSuite(
             self._init_entities(
-                entity_names=config.SENSORS,
+                entities_configs=config.lab_sensors,
                 register_func=registry.get_sensor,
-                entities_config=config,
             ).values()
         )
 
         self.actions = self._init_entities(
-            entity_names=config.POSSIBLE_ACTIONS,
+            entities_configs=config.actions,
             register_func=registry.get_task_action,
-            entities_config=self._config.ACTIONS,
         )
         self._action_keys = list(self.actions.keys())
 
-    def _init_entities(
-        self, entity_names, register_func, entities_config=None
-    ) -> OrderedDict:
-        if entities_config is None:
-            entities_config = self._config
+        self._is_episode_active = False
 
+    def add_perf_timing(self, *args, **kwargs):
+        if hasattr(self._sim, "add_perf_timing"):
+            self._sim.add_perf_timing(*args, **kwargs)
+
+    def _init_entities(self, entities_configs, register_func) -> OrderedDict:
         entities = OrderedDict()
-        for entity_name in entity_names:
-            entity_cfg = getattr(entities_config, entity_name)
-            entity_type = register_func(entity_cfg.TYPE)
+        for entity_name, entity_cfg in entities_configs.items():
+            entity_cfg = OmegaConf.create(entity_cfg)
+            if "type" not in entity_cfg:
+                raise ValueError(f"Could not find type in {entity_cfg}")
+            entity_type = register_func(entity_cfg.type)
             assert (
                 entity_type is not None
-            ), f"invalid {entity_name} type {entity_cfg.TYPE}"
+            ), f"invalid {entity_name} type {entity_cfg.type}"
             entities[entity_name] = entity_type(
                 sim=self._sim,
                 config=entity_cfg,
@@ -280,43 +294,74 @@ class EmbodiedTask:
         observations = self._sim.reset()
         observations.update(
             self.sensor_suite.get_observations(
-                observations=observations, episode=episode, task=self
+                observations=observations,
+                episode=episode,
+                task=self,
+                should_time=True,
             )
         )
 
         for action_instance in self.actions.values():
             action_instance.reset(episode=episode, task=self)
 
+        self._is_episode_active = True
+
         return observations
 
-    def step(self, action: Dict[str, Any], episode: Episode):
-        if "action_args" not in action or action["action_args"] is None:
-            action["action_args"] = {}
-        action_name = action["action"]
+    def _step_single_action(
+        self,
+        action_name: Any,
+        action: Dict[str, Any],
+        episode: Episode,
+    ):
         if isinstance(action_name, (int, np.integer)):
             action_name = self.get_action_name(action_name)
         assert (
             action_name in self.actions
         ), f"Can't find '{action_name}' action in {self.actions.keys()}."
-
         task_action = self.actions[action_name]
-        observations = task_action.step(**action["action_args"], task=self)
+        return task_action.step(
+            **action["action_args"],
+            task=self,
+        )
+
+    def step(self, action: Dict[str, Any], episode: Episode):
+        action_name = action["action"]
+        if "action_args" not in action or action["action_args"] is None:
+            action["action_args"] = {}
+        observations: Optional[Any] = None
+        if isinstance(action_name, tuple):  # there are multiple actions
+            for a_name in action_name:
+                observations = self._step_single_action(
+                    a_name,
+                    action,
+                    episode,
+                )
+        else:
+            observations = self._step_single_action(
+                action_name, action, episode
+            )
+
+        self._sim.step_physics(1.0 / self._physics_target_sps)  # type:ignore
+
+        if observations is None:
+            observations = self._sim.step(None)
+
         observations.update(
             self.sensor_suite.get_observations(
                 observations=observations,
                 episode=episode,
                 action=action,
                 task=self,
+                should_time=True,
             )
         )
-
         self._is_episode_active = self._check_episode_is_active(
             observations=observations, action=action, episode=episode
         )
-
         return observations
 
-    def get_action_name(self, action_index: int):
+    def get_action_name(self, action_index: Union[int, np.integer]):
         if action_index >= len(self.actions):
             raise ValueError(f"Action index '{action_index}' is out of range.")
         return self._action_keys[action_index]
@@ -331,15 +376,15 @@ class EmbodiedTask:
         )
 
     def overwrite_sim_config(
-        self, sim_config: Config, episode: Episode
-    ) -> Config:
+        self, sim_config: "DictConfig", episode: Episode
+    ) -> "DictConfig":
         r"""Update config merging information from :p:`sim_config` and
         :p:`episode`.
 
         :param sim_config: config for simulator.
         :param episode: current episode.
         """
-        raise NotImplementedError
+        return sim_config
 
     def _check_episode_is_active(
         self,

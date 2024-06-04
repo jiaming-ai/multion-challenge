@@ -27,7 +27,7 @@ import habitat_sim
 
 # flake8: noqa
 from habitat.articulated_agents.robots import FetchRobot, FetchRobotNoWheels
-#from habitat.config import read_write
+from habitat.config import read_write
 from habitat.core.registry import registry
 from habitat.core.simulator import AgentState, Observations
 from habitat.datasets.rearrange.rearrange_dataset import RearrangeEpisode

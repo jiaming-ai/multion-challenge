@@ -1,0 +1,74 @@
+# @package _global_
+defaults:
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /lmon_benchmark: langmon_nav
+  - _self_
+habitat:
+  environment:
+    #max_episode_steps: 150 # temporary for debugging
+    iterator_options:
+      max_scene_repeat_steps: 50000
+  task:
+    type: MultiObjectNav-v1
+    reward_measure: distance_to_currgoal_reward
+    success_reward: 2.5
+    slack_reward: -1e-3
+    actions:
+      #stop:
+       # type: StopAction
+      stop:
+        type: FoundObjectAction
+      move_forward:
+        type: MoveForwardAction
+      turn_left:
+        type: TurnLeftAction
+        tilt_angle: 15
+      turn_right:
+        type: TurnRightAction
+        tilt_angle: 15
+    lab_sensors:
+      multiobjectgoal_sensor:
+        type: MultiObjectGoalSensor
+        goal_spec: CATEGORY_LABEL_TEXT
+        goal_spec_max_val: 500
+    measurements:
+      distance_to_currgoal:
+        distance_to: VIEW_POINTS
+      sub_success:
+        success_distance: 0.5
+  simulator:
+    agents:
+      main_agent:
+        articulated_agent_urdf: 'null'
+        articulated_agent_type: 'null'
+        ik_arm_urdf: 'null'
+        radius: 0.1
+  dataset:
+    type: MultiObjectNav-v1
+    split: minival
+    scenes_dir: data/scene_datasets/fphab/scenes
+    data_path: data/datasets/{split}/{split}.json.gz
+task_baselines:
+  eval_non_learning: False #True
+  results_dir: "experiments/results"
+habitat_baselines:
+  torch_gpu_id: 0
+  tensorboard_dir: "experiments/tb"
+  video_dir: "experiments/video"
+  test_episode_count: -1
+  eval_ckpt_path_dir: "retrained/ckpt.55.pth" #"data/pretrained/hm3d_ddppo_pointnav_baselines_v1/hm3d-depth/ckpt.60.pth" #"retrained/ckpt.55.pth"
+  num_environments: 1
+  checkpoint_folder: "experiments/checkpoints" #checkpoints"
+  num_updates: 270000
+  log_interval: 10
+  num_checkpoints: 200
+  trainer_name: "ppo"
+  # True
+  # sensors: ["DEPTH_SENSOR", "RGB_SENSOR", "SEMANTIC_SENSOR"]
+  # Force PyTorch to be single threaded as
+  # this improves performance considerably
+  force_torch_single_threaded: True
+  eval:
+    split: "minival" #"minival"
+    use_ckpt_config: False
+    video_option: []

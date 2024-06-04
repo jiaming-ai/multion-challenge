@@ -10,7 +10,9 @@ import attr
 import numpy as np
 from gym import spaces
 
-from habitat.config import Config
+#from habitat.config import Config
+from habitat.config import read_write
+from habitat.config.default import get_agent_config
 from habitat.core.dataset import Dataset, Episode
 from habitat.core.embodied_task import (
     EmbodiedTask,
@@ -46,19 +48,18 @@ cv2 = try_cv2_import()
 from scipy.spatial.distance import pdist, squareform
 from scipy.sparse.csgraph import dijkstra
 
-
 MAP_THICKNESS_SCALAR: int = 1250
 
 
 def merge_sim_episode_config(
-    sim_config: Config, episode: Type[Episode]
+        sim_config, episode: Type[Episode]
 ) -> Any:
     sim_config.defrost()
     sim_config.SCENE = episode.scene_id
     sim_config.freeze()
     if (
-        episode.start_position is not None
-        and episode.start_rotation is not None
+            episode.start_position is not None
+            and episode.start_rotation is not None
     ):
         agent_name = sim_config.AGENTS[sim_config.DEFAULT_AGENT_ID]
         agent_cfg = getattr(sim_config, agent_name)
@@ -127,7 +128,7 @@ class ImageGoalSensor(Sensor):
     cls_uuid: str = "imagegoal"
 
     def __init__(
-        self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
+            self, *args: Any, sim: Simulator, config, **kwargs: Any
     ):
         self._sim = sim
         sensors = self._sim.sensor_suite.sensors
@@ -171,11 +172,11 @@ class ImageGoalSensor(Sensor):
         return goal_observation[self._rgb_sensor_uuid]
 
     def get_observation(
-        self,
-        *args: Any,
-        observations,
-        episode: NavigationEpisode,
-        **kwargs: Any,
+            self,
+            *args: Any,
+            observations,
+            episode: NavigationEpisode,
+            **kwargs: Any,
     ):
         episode_uniq_id = f"{episode.scene_id} {episode.episode_id}"
         if episode_uniq_id == self._current_episode_id:
@@ -208,8 +209,9 @@ class PointGoalSensor(Sensor):
         _dimensionality: number of dimensions used to specify the goal
     """
     cls_uuid: str = "pointgoal"
+
     def __init__(
-        self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
+            self, *args: Any, sim: Simulator, config, **kwargs: Any
     ):
         self._sim = sim
 
@@ -238,7 +240,7 @@ class PointGoalSensor(Sensor):
         )
 
     def _compute_pointgoal(
-        self, source_position, source_rotation, goal_position
+            self, source_position, source_rotation, goal_position
     ):
         direction_vector = goal_position - source_position
         direction_vector_agent = quaternion_rotate_vector(
@@ -358,8 +360,9 @@ class HeadingSensor(Sensor):
         config: config for the sensor.
     """
     cls_uuid: str = "heading"
+
     def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
+            self, sim: Simulator, config, *args: Any, **kwargs: Any
     ):
         self._sim = sim
         super().__init__(config=config)
@@ -422,8 +425,9 @@ class EpisodicGPSSensor(Sensor):
         _dimensionality: number of dimensions used to specify the agents position
     """
     cls_uuid: str = "gps"
+
     def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
+            self, sim: Simulator, config, *args: Any, **kwargs: Any
     ):
         self._sim = sim
 
@@ -616,11 +620,11 @@ class SubSuccess(Measure):
                 # episode,
             )
             if math.isinf(d_to_goal_point):
-                d_to_goal_point = self._euclidean_distance(
-                    current_position, episode.goals[curr_goal_ind].position
-                )
-            if (distance_to_subgoal <= self._config.SUCCESS_DISTANCE or
-                    d_to_goal_point <= self._config.SUCCESS_DISTANCE):
+                d_to_goal_point = min([self._euclidean_distance(
+                    current_position, g.centroid
+                ) for g in episode.goals[curr_goal_ind].goal_object])
+            if (distance_to_subgoal <= self._config.success_distance or
+                    d_to_goal_point <= self._config.success_distance):
                 self._metric = 1
                 task.current_goal_index += 1
                 episode.current_goal_index += 1
@@ -641,7 +645,7 @@ class OracleSubSuccess(Measure):
     cls_uuid: str = "oracle_sub_success"
 
     def __init__(
-        self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
+            self, *args: Any, sim: Simulator, config, **kwargs: Any
     ):
         self._sim = sim
         self._config = config
@@ -682,7 +686,7 @@ class PercentageSuccess(Measure):
     cls_uuid: str = "progress"
 
     def __init__(
-        self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
+            self, *args: Any, sim: Simulator, config, **kwargs: Any
     ):
         self._sim = sim
         self._config = config
@@ -723,7 +727,7 @@ class SPL(Measure):
     cls_uuid: str = "spl"
 
     def __init__(
-        self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
+            self, *args: Any, sim: Simulator, config, **kwargs: Any
     ):
         self._previous_position = None
         self._start_end_episode_distance = None
@@ -826,20 +830,27 @@ class MSPL(Measure):
 
         self._start_end_episode_distance = 0
 
-        self.all_sps = calculate_episode_multigoal_sp(episode, self._sim)
-        start = sum([len(go.navigable_points) for ind in range(len(episode.goals) - 1) for go in episode.goals[ind].goal_object])
-        end = -1
-        self._start_end_episode_distance = min(self.all_sps[-1, start:end]).item()
-
-        # for goal_number in range(len(episode.goals) ):  # Find distances between successive goals and keep adding them
-        #   if goal_number == 0:
-        #      self._start_end_episode_distance += self._sim.geodesic_distance(
-        #         episode.start_position, episode.goals[0].position[0]
-        #    )
-        # else:
-        #   self._start_end_episode_distance += self._sim.geodesic_distance(
-        #      episode.goals[goal_number - 1].position[0], episode.goals[goal_number].position[0]
-        # )
+        for goal_number in range(len(episode.goals)):  # Find distances between successive goals and keep adding them
+            if goal_number == 0:
+                centr = [o.centroid for o in episode.goals[0].goal_object]
+                dists = [self._euclidean_distance(  #_sim.geodesic_distance
+                    episode.start_position, c
+                    )
+                    for c in centr
+                ]
+                selected_centr = np.argmin(dists).item()
+                self._start_end_episode_distance += dists[selected_centr]
+                previous_centr = centr[selected_centr]
+            else:
+                centr = [o.centroid for o in episode.goals[goal_number].goal_object]
+                dists = [self._euclidean_distance(  # _sim.geodesic_distance
+                    previous_centr, c
+                    )
+                    for c in centr
+                ]
+                selected_centr = np.argmin(dists).item()
+                self._start_end_episode_distance += dists[selected_centr]
+                previous_centr = centr[selected_centr]
         if self._start_end_episode_distance == float("inf"):
             logger.info(
                 '(MSPL) Inf value from sim.geodesic_distance between successive goals starting from the start_position. episode=')
@@ -876,7 +887,7 @@ class MSPL(Measure):
 
 
 @registry.register_measure
-class PSPL(Measure):
+class PPL(Measure):
     """Progress weighted by path length (similar to SPL, but in multigoal case)
     """
     cls_uuid: str = "ppl"
@@ -903,18 +914,29 @@ class PSPL(Measure):
         self._start_subgoal_episode_distance = []
         self._start_subgoal_agent_distance = []
 
-        self.all_sps = calculate_episode_multigoal_sp(episode, self._sim)
+        for goal_number in range(len(episode.goals)):  # Find distances between successive goals and keep adding them
+            if goal_number == 0:
+                centr = [o.centroid for o in episode.goals[0].goal_object]
+                dists = [self._euclidean_distance(  #_sim.geodesic_distance
+                    episode.start_position, c
+                    )
+                    for c in centr
+                ]
+                selected_centr = np.argmin(dists).item()
+                self._start_end_episode_distance += dists[selected_centr]
+                previous_centr = centr[selected_centr]
+            else:
+                centr = [o.centroid for o in episode.goals[goal_number].goal_object]
+                dists = [self._euclidean_distance(  # _sim.geodesic_distance
+                    previous_centr, c
+                    )
+                    for c in centr
+                ]
+                selected_centr = np.argmin(dists).item()
+                self._start_end_episode_distance += dists[selected_centr]
+                previous_centr = centr[selected_centr]
+            self._start_subgoal_episode_distance.append(self._start_end_episode_distance)
 
-        # for goal_number in range(len(episode.goals)):  # Find distances between successive goals and keep adding them
-        #   if goal_number == 0:
-        #      self._start_end_episode_distance += self._sim.geodesic_distance(
-        #         episode.start_position, episode.goals[0].position[0]
-        #    )
-        #   self._start_subgoal_episode_distance.append(self._start_end_episode_distance)
-        # else:
-        #   self._start_end_episode_distance += self._sim.geodesic_distance(
-        #      episode.goals[goal_number - 1].position[0], episode.goals[goal_number].position[0]
-        # )
         # self._start_subgoal_episode_distance.append(self._start_end_episode_distance)
         self._agent_episode_distance = 0.0
         self._metric = None
@@ -943,10 +965,7 @@ class PSPL(Measure):
             self._start_subgoal_agent_distance.append(self._agent_episode_distance)
 
         if ep_percentage_success > 0:
-            start = sum([len(go.navigable_points) for ind in range(task.current_goal_index - 1) for go in episode.goals[ind].goal_object])
-            end = sum([len(go.navigable_points) for ind in range(task.current_goal_index - 1) for go in episode.goals[ind].goal_object]) + sum(
-                len(go.navigable_points) for go in episode.goals[task.current_goal_index - 1].goal_object)
-            sp_start_to_sgoal = min(self.all_sps[-1, start:end]).item()
+            sp_start_to_sgoal = self._start_subgoal_episode_distance[task.current_goal_index - 1]
 
             self._metric = ep_percentage_success * (
                     sp_start_to_sgoal
@@ -968,7 +987,7 @@ class WPL(Measure):
     cls_uuid: str = "wpl"
 
     def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
+            self, sim: Simulator, config, *args: Any, **kwargs: Any
     ):
         self._previous_position = None
         self._start_end_episode_distance = None
@@ -1028,7 +1047,7 @@ class STEPS(Measure):
     """
 
     def __init__(
-        self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
+            self, *args: Any, sim: Simulator, config, **kwargs: Any
     ):
         self._previous_position = None
         self._start_end_episode_distance = None
@@ -1115,7 +1134,7 @@ class TopDownMap(Measure):
     r"""Top Down Map measure"""
 
     def __init__(
-        self, sim: "HabitatSim", config: Config, *args: Any, **kwargs: Any
+            self, sim: "HabitatSim", config, *args: Any, **kwargs: Any
     ):
         self._sim = sim
         self._config = config
@@ -1375,7 +1394,7 @@ class FowMap(Measure):
     """
 
     def __init__(
-        self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
+            self, *args: Any, sim: Simulator, config, **kwargs: Any
     ):
         self._sim = sim
         self._config = config
@@ -1449,7 +1468,7 @@ class DistanceToGoal(Measure):
     cls_uuid: str = "distance_to_goal"
 
     def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
+            self, sim: Simulator, config, *args: Any, **kwargs: Any
     ):
         self._previous_position = None
         self._start_end_episode_distance = None
@@ -1595,7 +1614,7 @@ class Ratio(Measure):
     cls_uuid: str = "ratio"
 
     def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
+            self, sim: Simulator, config, *args: Any, **kwargs: Any
     ):
         self._sim = sim
         self._config = config
@@ -1652,7 +1671,7 @@ class EpisodeLength(Measure):
     cls_uuid: str = "episode_length"
 
     def __init__(
-        self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
+            self, *args: Any, sim: Simulator, config, **kwargs: Any
     ):
         self._episode_length = None
         self._sim = sim
@@ -1685,7 +1704,7 @@ class RawMetrics(Measure):
     cls_uuid: str = "raw_metrics"
 
     def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
+            self, sim: Simulator, config, *args: Any, **kwargs: Any
     ):
         self._previous_position = None
         self._start_end_episode_distance = None
@@ -1788,8 +1807,8 @@ class DistanceToCurrGoal(Measure):
         )
         self._agent_subgoal_distance = 0.0
         self._metric = None
-        if self._config.DISTANCE_TO == "VIEW_POINTS":
-            #self._subgoal_view_points = [
+        if self._config.distance_to == "VIEW_POINTS":
+            # self._subgoal_view_points = [
             #    view_point.agent_state.position
             #    for goal in episode.goals[task.current_goal_index]
             #    for view_point in goal.viewpoints
@@ -1804,14 +1823,15 @@ class DistanceToCurrGoal(Measure):
 
     def update_metric(self, episode, task, *args: Any, **kwargs: Any):
         current_position = self._sim.get_agent_state().position.tolist()
-        if self._config.DISTANCE_TO == "POINT":
-            curr_goal_ind = (task.current_goal_index 
+        if self._config.distance_to == "POINT":
+            curr_goal_ind = (task.current_goal_index
                              if task.current_goal_index < len(episode.goals) else -1)
             distance_to_subgoal= self._sim.geodesic_distance(
                 current_position, [go.centroid for go in episode.goals[curr_goal_ind].goal_object]
             )
-        elif self._config.DISTANCE_TO == "VIEW_POINTS":
-            self._subgoal_view_points = [go.navigable_points for go in episode.goals[task.current_goal_index].goal_object]
+        elif self._config.distance_to == "VIEW_POINTS":
+            self._subgoal_view_points = [go.navigable_points for go in
+                                         episode.goals[task.current_goal_index].goal_object]
             # distance_to_subgoal = self._sim.geodesic_distance(
             #     current_position, self._subgoal_view_points
             # )
@@ -1852,8 +1872,8 @@ class MoveForwardAction(SimulatorTaskAction):
         r"""Update ``_metric``, this method is called from ``Env`` on each
         ``step``.
         """
-        task.is_found_called = False ##C
-        return self._sim.step(HabitatSimActions.MOVE_FORWARD)
+        task.is_found_called = False  ##C
+        return self._sim.step(HabitatSimActions.move_forward)
 
 
 @registry.register_task_action
@@ -1862,8 +1882,8 @@ class TurnLeftAction(SimulatorTaskAction):
         r"""Update ``_metric``, this method is called from ``Env`` on each
         ``step``.
         """
-        task.is_found_called = False ##C
-        return self._sim.step(HabitatSimActions.TURN_LEFT)
+        task.is_found_called = False  ##C
+        return self._sim.step(HabitatSimActions.turn_left)
 
 
 @registry.register_task_action
@@ -1872,8 +1892,8 @@ class TurnRightAction(SimulatorTaskAction):
         r"""Update ``_metric``, this method is called from ``Env`` on each
         ``step``.
         """
-        task.is_found_called = False ##C
-        return self._sim.step(HabitatSimActions.TURN_RIGHT)
+        task.is_found_called = False  ##C
+        return self._sim.step(HabitatSimActions.turn_right)
 
 
 @registry.register_task_action
@@ -1978,18 +1998,29 @@ class TeleportAction(SimulatorTaskAction):
         )
 
 
-
 @registry.register_task(name="Nav-v0")
 class NavigationTask(EmbodiedTask):
     def __init__(
-        self, config: Config, sim: Simulator, dataset: Optional[Dataset] = None
+            self, config, sim: Simulator, dataset: Optional[Dataset] = None
     ) -> None:
         super().__init__(config=config, sim=sim, dataset=dataset)
-        
+
     def overwrite_sim_config(
-        self, sim_config: Any, episode: Type[Episode]
+            self, config: Any, episode: Type[Episode]
     ) -> Any:
-        return merge_sim_episode_config(sim_config, episode)
+        with read_write(config):
+            config.simulator.scene = episode.scene_id
+            if (
+                episode.start_position is not None
+                and episode.start_rotation is not None
+            ):
+                agent_config = get_agent_config(config.simulator)
+                agent_config.start_position = episode.start_position
+                agent_config.start_rotation = [
+                    float(k) for k in episode.start_rotation
+                ]
+                agent_config.is_set_start_state = True
+        return config
 
     def _check_episode_is_active(self, *args: Any, **kwargs: Any) -> bool:
         return not getattr(self, "is_stop_called", False)

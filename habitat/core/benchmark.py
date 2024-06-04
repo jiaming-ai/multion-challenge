@@ -13,9 +13,11 @@ import os
 from collections import defaultdict
 from typing import Dict, Optional
 
+from tqdm import tqdm
+
 from habitat.config.default import get_config
 from habitat.core.agent import Agent
-from habitat.core.env import Env
+from habitat.core.env import Env, LangMONEnv
 
 
 class Benchmark:
@@ -30,12 +32,13 @@ class Benchmark:
         :param eval_remote: boolean indicating whether evaluation should be run remotely or locally
         """
         config_env = get_config(config_paths)
+        self.full_config = config_env
         self._eval_remote = eval_remote
 
         if self._eval_remote is True:
             self._env = None
         else:
-            self._env = Env(config=config_env)
+            self._env = LangMONEnv(config=config_env)
 
     def remote_evaluate(
         self, agent: "Agent", num_episodes: Optional[int] = None

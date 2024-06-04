@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-# Copyright (c) Facebook, Inc. and its affiliates.
+# Copyright (c) Meta Platforms, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
-import quaternion  # noqa # pylint: disable=unused-import
+import quaternion  # noqa: F401 # pylint: disable=unused-import
 
 
 def quaternion_to_rotation(q_r, q_i, q_j, q_k):

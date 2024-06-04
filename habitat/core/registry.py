@@ -25,15 +25,19 @@ Various decorators for registry different kind of classes with unique keys
 -   Register a sensor: ``@registry.register_sensor``
 -   Register a measure: ``@registry.register_measure``
 -   Register a dataset: ``@registry.register_dataset``
+-   Register a environment: ``@registry.register_env``
 """
 
 import collections
-from typing import Any, Callable, DefaultDict, Optional, Type
+from typing import TYPE_CHECKING, Any, Callable, DefaultDict, Optional, Type
 
 from habitat.core.dataset import Dataset
 from habitat.core.embodied_task import Action, EmbodiedTask, Measure
-from habitat.core.simulator import ActionSpaceConfiguration, Sensor, Simulator
+from habitat.core.simulator import Sensor, Simulator
 from habitat.core.utils import Singleton
+
+if TYPE_CHECKING:
+    from habitat.core.env import RLEnv
 
 
 class Registry(metaclass=Singleton):
@@ -178,21 +182,18 @@ class Registry(metaclass=Singleton):
         )
 
     @classmethod
-    def register_action_space_configuration(
-        cls, to_register=None, *, name: Optional[str] = None
-    ):
-        r"""Register a action space configuration to registry with key :p:`name`
+    def register_env(cls, to_register=None, *, name: Optional[str] = None):
+        r"""Register a environment to registry with key 'name'
+            currently only support subclass of RLEnv.
 
-        :param name: Key with which the action space will be registered.
-            If :py:`None` will use the name of the class
+        Args:
+            name: Key with which the env will be registered.
+                If None will use the name of the class.
+
         """
+        from gym import Env
 
-        return cls._register_impl(
-            "action_space_config",
-            to_register,
-            name,
-            assert_type=ActionSpaceConfiguration,
-        )
+        return cls._register_impl("env", to_register, name, assert_type=Env)
 
     @classmethod
     def _get_impl(cls, _type: str, name: str) -> Type:
@@ -223,10 +224,8 @@ class Registry(metaclass=Singleton):
         return cls._get_impl("dataset", name)
 
     @classmethod
-    def get_action_space_configuration(
-        cls, name: str
-    ) -> Type[ActionSpaceConfiguration]:
-        return cls._get_impl("action_space_config", name)
+    def get_env(cls, name: str) -> Type["RLEnv"]:
+        return cls._get_impl("env", name)
 
 
 registry = Registry()

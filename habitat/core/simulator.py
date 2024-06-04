@@ -1,26 +1,43 @@
 #!/usr/bin/env python3
 
-# Copyright (c) Facebook, Inc. and its affiliates.
+# Copyright (c) Meta Platforms, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 import abc
+import time
 from collections import OrderedDict
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Union,
+)
 
 import attr
 import numpy as np
+import quaternion
 from gym import Space, spaces
 
-from habitat.config import Config
 from habitat.core.dataset import Episode
 
-VisualObservation = Union[np.ndarray]
+if TYPE_CHECKING:
+    try:
+        from torch import Tensor
+    except ImportError:
+        pass
+    from omegaconf import DictConfig
+
+VisualObservation = Union[np.ndarray, "Tensor"]
 
 
 @attr.s(auto_attribs=True)
 class ActionSpaceConfiguration(metaclass=abc.ABCMeta):
-    config: Config
+    config: "DictConfig"
 
     @abc.abstractmethod
     def get(self) -> Any:
@@ -60,15 +77,15 @@ class Sensor(metaclass=abc.ABCMeta):
     """
 
     uuid: str
-    config: Config
+    config: "DictConfig"
     sensor_type: SensorTypes
     observation_space: Space
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.config = kwargs["config"] if "config" in kwargs else None
-        if hasattr(self.config, "UUID"):
-            # We allow any sensor config to override the UUID
-            self.uuid = self.config.UUID
+        if hasattr(self.config, "uuid"):
+            # We allow any sensor config to override the uuid
+            self.uuid = self.config.uuid
         else:
             self.uuid = self._get_uuid(*args, **kwargs)
         self.sensor_type = self._get_sensor_type(*args, **kwargs)
@@ -96,18 +113,25 @@ class Observations(Dict[str, Any]):
     r"""Dictionary containing sensor observations"""
 
     def __init__(
-        self, sensors: Dict[str, Sensor], *args: Any, **kwargs: Any
+        self,
+        sensors: Dict[str, Sensor],
+        *args: Any,
+        should_time: bool = False,
+        **kwargs: Any,
     ) -> None:
         """Constructor
 
         :param sensors: list of sensors whose observations are fetched and
             packaged.
         """
+        data = []
+        for uuid, sensor in sensors.items():
+            t_start = time.time()
+            data.append((uuid, sensor.get_observation(*args, **kwargs)))
 
-        data = [
-            (uuid, sensor.get_observation(*args, **kwargs))
-            for uuid, sensor in sensors.items()
-        ]
+            if should_time:
+                kwargs["task"].add_perf_timing(f"sensors.{uuid}", t_start)
+
         super().__init__(data)
 
 
@@ -215,22 +239,22 @@ class SensorSuite:
 
 @attr.s(auto_attribs=True)
 class AgentState:
-    position: Optional["np.ndarray"]
-    rotation: Optional["np.ndarray"] = None
+    position: Union[None, List[float], np.ndarray]
+    rotation: Union[None, np.ndarray, quaternion.quaternion] = None
 
 
 @attr.s(auto_attribs=True)
 class ShortestPathPoint:
     position: List[Any]
     rotation: List[Any]
-    action: Optional[int] = None
+    action: Union[int, np.ndarray, None] = None
 
 
 class Simulator:
     r"""Basic simulator class for habitat. New simulators to be added to habtiat
     must derive from this class and implement the abstarct methods.
     """
-    habitat_config: Config
+    habitat_config: "DictConfig"
 
     def __init__(self, *args, **kwargs) -> None:
         pass
@@ -261,13 +285,17 @@ class Simulator:
     def seed(self, seed: int) -> None:
         raise NotImplementedError
 
-    def reconfigure(self, config: Config) -> None:
+    def reconfigure(
+        self, config: "DictConfig", episode: Optional[Episode] = None
+    ) -> None:
         raise NotImplementedError
 
     def geodesic_distance(
         self,
-        position_a: Sequence[float],
-        position_b: Union[Sequence[float], Sequence[Sequence[float]]],
+        position_a: Union[Sequence[float], np.ndarray],
+        position_b: Union[
+            Sequence[float], Sequence[Sequence[float]], np.ndarray
+        ],
         episode: Optional[Episode] = None,
     ) -> float:
         r"""Calculates geodesic distance between two points.
@@ -376,7 +404,7 @@ class Simulator:
     def render(self, mode: str = "rgb") -> Any:
         raise NotImplementedError
 
-    def close(self) -> None:
+    def close(self, destroy: bool = True) -> None:
         pass
 
     def previous_step_collided(self) -> bool:
